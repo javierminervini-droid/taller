@@ -17,6 +17,31 @@ export function migrate() {
   addColumn('service_orders', 'parts_cost', 'REAL NOT NULL DEFAULT 0');
   addColumn('service_orders', 'parts_sale', 'REAL NOT NULL DEFAULT 0');
   addColumn('service_orders', 'product_label', 'TEXT');
+  addColumn('clients', 'locality', 'TEXT');
+  addColumn('service_orders', 'locality', 'TEXT');
+
+  // Backfill free-text locality from the old localities table when present
+  const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='localities'").get();
+  if (tables) {
+    if (columns('clients').includes('locality_id')) {
+      db.exec(`
+        UPDATE clients
+        SET locality = (
+          SELECT l.name FROM localities l WHERE l.id = clients.locality_id
+        )
+        WHERE (locality IS NULL OR locality = '') AND locality_id IS NOT NULL
+      `);
+    }
+    if (columns('service_orders').includes('locality_id')) {
+      db.exec(`
+        UPDATE service_orders
+        SET locality = (
+          SELECT l.name FROM localities l WHERE l.id = service_orders.locality_id
+        )
+        WHERE (locality IS NULL OR locality = '') AND locality_id IS NOT NULL
+      `);
+    }
+  }
 
   // Si ya había repuesto de catálogo, copiar el nombre al campo libre una sola vez
   db.exec(`

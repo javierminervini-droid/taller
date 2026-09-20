@@ -20,12 +20,6 @@ CREATE TABLE IF NOT EXISTS technicians (
   active INTEGER NOT NULL DEFAULT 1
 );
 
-CREATE TABLE IF NOT EXISTS localities (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL,
-  province TEXT
-);
-
 CREATE TABLE IF NOT EXISTS providers (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
@@ -41,7 +35,7 @@ CREATE TABLE IF NOT EXISTS clients (
   name TEXT NOT NULL,
   phone TEXT,
   email TEXT,
-  locality_id INTEGER REFERENCES localities(id),
+  locality TEXT,
   address TEXT,
   notes TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -76,7 +70,7 @@ CREATE TABLE IF NOT EXISTS service_orders (
   technician_id INTEGER REFERENCES technicians(id),
   product_type_id INTEGER REFERENCES product_types(id),
   product_id INTEGER REFERENCES products(id),
-  locality_id INTEGER REFERENCES localities(id),
+  locality TEXT,
   provider_id INTEGER REFERENCES providers(id),
   status_id INTEGER NOT NULL REFERENCES service_statuses(id),
   title TEXT NOT NULL,

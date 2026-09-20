@@ -50,12 +50,10 @@ app.get('/api/auth/me', async (request) => {
 app.get('/api/lookups', async (request) => {
   const statuses = db.prepare('SELECT * FROM service_statuses ORDER BY sort_order').all();
   const productTypes = db.prepare('SELECT * FROM product_types ORDER BY name').all();
-  const localities = db.prepare('SELECT * FROM localities ORDER BY name').all();
   if (request.user.role === 'tecnico') {
     const tech = technicianOf(request.user);
     return {
       technicians: tech ? [tech] : [],
-      localities,
       providers: [],
       productTypes,
       statuses,
@@ -65,7 +63,6 @@ app.get('/api/lookups', async (request) => {
   }
   return {
     technicians: db.prepare('SELECT * FROM technicians WHERE active = 1 ORDER BY name').all(),
-    localities,
     providers: db.prepare('SELECT * FROM providers ORDER BY name').all(),
     productTypes,
     statuses,
@@ -110,9 +107,9 @@ function orderFilters(query) {
     clauses.push('o.provider_id = ?');
     params.push(Number(query.providerId));
   }
-  if (query.localityId) {
-    clauses.push('o.locality_id = ?');
-    params.push(Number(query.localityId));
+  if (query.locality) {
+    clauses.push('o.locality LIKE ?');
+    params.push(`%${query.locality}%`);
   }
   if (query.statusId) {
     clauses.push('o.status_id = ?');
@@ -133,7 +130,6 @@ const ORDER_SELECT = `
          pt.name AS product_type_name,
          p.name AS product_name,
          pr.name AS provider_name, pr.kind AS provider_kind,
-         l.name AS locality_name, l.province AS locality_province,
          s.name AS status_name, s.color AS status_color,
          date(COALESCE(c.created_at, o.created_at)) AS load_date,
          date(o.created_at) AS entry_date,
@@ -146,7 +142,6 @@ const ORDER_SELECT = `
   LEFT JOIN product_types pt ON pt.id = o.product_type_id
   LEFT JOIN products p ON p.id = o.product_id
   LEFT JOIN providers pr ON pr.id = o.provider_id
-  LEFT JOIN localities l ON l.id = o.locality_id
 `;
 
 function scopedQuery(user, query) {
@@ -211,14 +206,14 @@ app.post('/api/orders', async (request, reply) => {
   const b = request.body;
   const result = db.prepare(
     `INSERT INTO service_orders
-      (client_id, technician_id, product_type_id, product_id, product_label, locality_id, provider_id,
+      (client_id, technician_id, product_type_id, product_id, product_label, locality, provider_id,
        status_id, title, description, scheduled_date, scheduled_time,
        hours, km, parts_cost, parts_sale, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`
   ).run(
     b.client_id, b.technician_id || null, b.product_type_id || null, b.product_id || null,
     b.product_label || null,
-    b.locality_id || null, b.provider_id || null, b.status_id,
+    b.locality || null, b.provider_id || null, b.status_id,
     b.title || b.product_label || 'Servicio', b.description || null,
     b.scheduled_date || null, b.scheduled_time || null,
     Number(b.hours || 0), Number(b.km || 0), Number(b.parts_cost || 0), Number(b.parts_sale || 0)
@@ -250,7 +245,7 @@ app.patch('/api/orders/:id', async (request, reply) => {
         scheduled_date: current.scheduled_date,
         client_id: current.client_id,
         technician_id: current.technician_id,
-        locality_id: b.locality_id ?? current.locality_id,
+        locality: b.locality ?? current.locality,
         provider_id: current.provider_id,
         hours: current.hours,
         km: current.km,
@@ -267,7 +262,7 @@ app.patch('/api/orders/:id', async (request, reply) => {
   }
   db.prepare(
     `UPDATE service_orders SET
-      client_id=?, technician_id=?, product_type_id=?, product_id=?, product_label=?, locality_id=?, provider_id=?,
+      client_id=?, technician_id=?, product_type_id=?, product_id=?, product_label=?, locality=?, provider_id=?,
       status_id=?, title=?, description=?, scheduled_date=?, scheduled_time=?,
       hours=?, km=?, parts_cost=?, parts_sale=?,
       started_at=?, completed_at=?, updated_at=datetime('now')
@@ -275,7 +270,7 @@ app.patch('/api/orders/:id', async (request, reply) => {
   ).run(
     allowed.client_id, allowed.technician_id || null, allowed.product_type_id || null, allowed.product_id || null,
     allowed.product_label || null,
-    allowed.locality_id || null, allowed.provider_id || null, allowed.status_id, allowed.title, allowed.description || null,
+    allowed.locality || null, allowed.provider_id || null, allowed.status_id, allowed.title, allowed.description || null,
     allowed.scheduled_date || null, allowed.scheduled_time || null,
     Number(allowed.hours || 0), Number(allowed.km || 0), Number(allowed.parts_cost || 0), Number(allowed.parts_sale || 0),
     startedAt, completedAt, id
@@ -296,11 +291,10 @@ app.get('/api/clients', async (request) => {
   if (request.user.role === 'tecnico') {
     const tech = technicianOf(request.user);
     return db.prepare(
-      `SELECT DISTINCT c.*, p.name AS provider_name, p.kind AS provider_kind, l.name AS locality_name
+      `SELECT DISTINCT c.*, p.name AS provider_name, p.kind AS provider_kind
        FROM clients c
        JOIN service_orders o ON o.client_id = c.id
        LEFT JOIN providers p ON p.id = c.provider_id
-       LEFT JOIN localities l ON l.id = c.locality_id
        WHERE o.technician_id = ?
        ORDER BY c.name`
     ).all(tech?.id || -1);
@@ -318,10 +312,9 @@ app.get('/api/clients', async (request) => {
   }
   const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
   return db.prepare(
-    `SELECT c.*, p.name AS provider_name, p.kind AS provider_kind, l.name AS locality_name
+    `SELECT c.*, p.name AS provider_name, p.kind AS provider_kind
      FROM clients c
      LEFT JOIN providers p ON p.id = c.provider_id
-     LEFT JOIN localities l ON l.id = c.locality_id
      ${where}
      ORDER BY c.name`
   ).all(...params);
@@ -354,10 +347,10 @@ app.post('/api/clients', async (request, reply) => {
   if (!requireRole(request.user, ['admin', 'coordinador'], reply)) return reply;
   const b = request.body;
   const result = db.prepare(
-    `INSERT INTO clients (provider_id, external_id, name, phone, email, locality_id, address, notes, source)
+    `INSERT INTO clients (provider_id, external_id, name, phone, email, locality, address, notes, source)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'manual')`
   ).run(b.provider_id || null, b.external_id || null, b.name, b.phone || null, b.email || null,
-    b.locality_id || null, b.address || null, b.notes || null);
+    b.locality || null, b.address || null, b.notes || null);
   return { id: Number(result.lastInsertRowid) };
 });
 
@@ -368,11 +361,11 @@ app.patch('/api/clients/:id', async (request, reply) => {
   if (!current) return reply.code(404).send({ error: 'Cliente no encontrado' });
   const b = { ...current, ...request.body };
   db.prepare(
-    `UPDATE clients SET provider_id=?, external_id=?, name=?, phone=?, email=?, locality_id=?, address=?, notes=?
+    `UPDATE clients SET provider_id=?, external_id=?, name=?, phone=?, email=?, locality=?, address=?, notes=?
      WHERE id=?`
   ).run(
     b.provider_id || null, b.external_id || null, b.name, b.phone || null, b.email || null,
-    b.locality_id || null, b.address || null, b.notes || null, id
+    b.locality || null, b.address || null, b.notes || null, id
   );
   return { ok: true };
 });
@@ -423,14 +416,6 @@ app.patch('/api/product-types/:id', async (request, reply) => {
   if (!requireRole(request.user, ['admin', 'coordinador'], reply)) return reply;
   db.prepare('UPDATE product_types SET name = ? WHERE id = ?').run(request.body.name, Number(request.params.id));
   return { ok: true };
-});
-app.post('/api/localities', async (request, reply) => {
-  if (!requireRole(request.user, ['admin', 'coordinador'], reply)) return reply;
-  const result = db.prepare('INSERT INTO localities (name, province) VALUES (?, ?)').run(
-    request.body.name,
-    request.body.province || null
-  );
-  return { id: Number(result.lastInsertRowid) };
 });
 
 app.get('/api/followups', async (request, reply) => {

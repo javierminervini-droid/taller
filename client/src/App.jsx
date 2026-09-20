@@ -42,7 +42,7 @@ function callClient(phone) {
 }
 
 function orderAddress(order) {
-  return [order.client_address, order.locality_name, order.locality_province].filter(Boolean).join(', ');
+  return [order.client_address, order.locality].filter(Boolean).join(', ');
 }
 
 function googleMapsRouteUrl(orders) {
@@ -87,7 +87,7 @@ function printOrder(order) {
       <tr><th>Cliente</th><td>${order.client_name || ''}</td></tr>
       <tr><th>Teléfono</th><td>${order.client_phone || ''}</td></tr>
       <tr><th>Dirección</th><td>${addr}</td></tr>
-      <tr><th>Localidad</th><td>${order.locality_name || ''}</td></tr>
+      <tr><th>Localidad</th><td>${order.locality || ''}</td></tr>
       <tr><th>Tipo de producto</th><td>${order.product_type_name || ''}</td></tr>
       <tr><th>Producto</th><td>${product}</td></tr>
       <tr><th>Origen</th><td>${order.provider_name || 'Carga propia'}${order.provider_kind ? ` (${order.provider_kind})` : ''}</td></tr>
@@ -175,10 +175,12 @@ function Filters({ lookups, filters, setFilters, extra }) {
         </select>
       </Field>
       <Field label="Localidad">
-        <select value={filters.localityId || ''} onChange={set('localityId')}>
-          <option value="">Todas</option>
-          {lookups.localities?.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-        </select>
+        <input
+          type="text"
+          placeholder="Buscar…"
+          value={filters.locality || ''}
+          onChange={set('locality')}
+        />
       </Field>
       {extra}
     </div>
@@ -230,7 +232,6 @@ function Agenda({ lookups, user, onLookups }) {
   const [data, setData] = useState({ orders: [], technicians: [] });
   const [clients, setClients] = useState([]);
   const [newType, setNewType] = useState('');
-  const [newLocality, setNewLocality] = useState('');
   const [draft, setDraft] = useState(null);
   const [msg, setMsg] = useState('');
 
@@ -299,14 +300,6 @@ function Agenda({ lookups, user, onLookups }) {
     load();
   }
 
-  async function addLocality(e) {
-    e.preventDefault();
-    if (!newLocality.trim()) return;
-    await api('/api/localities', { method: 'POST', body: { name: newLocality.trim() } });
-    setNewLocality('');
-    onLookups?.();
-  }
-
   async function addRow(e) {
     e.preventDefault();
     if (!draft?.client_id) {
@@ -322,7 +315,7 @@ function Agenda({ lookups, user, onLookups }) {
         product_type_id: draft.product_type_id ? Number(draft.product_type_id) : null,
         product_label: productLabel || null,
         provider_id: draft.provider_id ? Number(draft.provider_id) : null,
-        locality_id: draft.locality_id ? Number(draft.locality_id) : null,
+        locality: (draft.locality || '').trim() || null,
         status_id: Number(draft.status_id),
         title: productLabel || 'Servicio',
         scheduled_date: filters.date || today(),
@@ -340,7 +333,7 @@ function Agenda({ lookups, user, onLookups }) {
       product_type_id: '',
       product_label: '',
       provider_id: '',
-      locality_id: '',
+      locality: '',
       status_id: lookups.statuses?.[0]?.id || '',
     });
   }
@@ -386,10 +379,6 @@ function Agenda({ lookups, user, onLookups }) {
               <button className="ghost" type="submit">Agregar tipo</button>
             </form>
           </div>
-          <form className="row" onSubmit={addLocality} style={{ marginTop: 8 }}>
-            <input placeholder="Nueva localidad" value={newLocality} onChange={(e) => setNewLocality(e.target.value)} />
-            <button className="ghost" type="submit">Agregar localidad</button>
-          </form>
         </div>
       )}
 
@@ -441,10 +430,7 @@ function Agenda({ lookups, user, onLookups }) {
                   <SheetInput value={o.client_address || ''} disabled={!canEditAll} onCommit={(v) => patchClient(o, { address: v })} />
                 </td>
                 <td>
-                  <SheetSelect value={o.locality_id || ''} onCommit={(v) => patchOrder(o, { locality_id: v ? Number(v) : null })}>
-                    <option value="">—</option>
-                    {lookups.localities?.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-                  </SheetSelect>
+                  <SheetInput value={o.locality || ''} onCommit={(v) => patchOrder(o, { locality: v || null })} />
                 </td>
                 <td>
                   <SheetSelect value={o.product_type_id || ''} onCommit={(v) => patchOrder(o, { product_type_id: v ? Number(v) : null })}>
@@ -499,10 +485,7 @@ function Agenda({ lookups, user, onLookups }) {
                 </td>
                 <td colSpan={2} className="meta" style={{ padding: 8 }}>Se completa con el cliente</td>
                 <td>
-                  <SheetSelect value={draft.locality_id} onCommit={(v) => setDraft({ ...draft, locality_id: v })}>
-                    <option value="">—</option>
-                    {lookups.localities?.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-                  </SheetSelect>
+                  <SheetInput value={draft.locality} onCommit={(v) => setDraft({ ...draft, locality: v })} />
                 </td>
                 <td>
                   <SheetSelect value={draft.product_type_id} onCommit={(v) => setDraft({ ...draft, product_type_id: v })}>
@@ -601,7 +584,7 @@ function Ordenes({ lookups, onCreated }) {
   const [openMonths, setOpenMonths] = useState({});
   const [form, setForm] = useState({
     title: '', client_id: '', technician_id: '', product_type_id: '', product_label: '', provider_id: '',
-    locality_id: '', status_id: lookups.statuses?.[0]?.id || '', scheduled_date: today(),
+    locality: '', status_id: lookups.statuses?.[0]?.id || '', scheduled_date: today(),
     description: '',
   });
 
@@ -646,7 +629,7 @@ function Ordenes({ lookups, onCreated }) {
         product_type_id: form.product_type_id ? Number(form.product_type_id) : null,
         product_label: productLabel || null,
         provider_id: form.provider_id ? Number(form.provider_id) : null,
-        locality_id: form.locality_id ? Number(form.locality_id) : null,
+        locality: (form.locality || '').trim() || null,
         status_id: Number(form.status_id),
         title: form.title || productLabel || 'Servicio',
         description: form.description || null,
@@ -691,7 +674,7 @@ function Ordenes({ lookups, onCreated }) {
               <td>{o.product_type_name || '—'}</td>
               <td>{o.provider_name || 'Carga propia'}</td>
               <td><span className="badge" style={{ background: o.status_color }}>{o.status_name}</span></td>
-              <td>{o.locality_name || '—'}</td>
+              <td>{o.locality || '—'}</td>
             </tr>
           ))}
         </tbody>
@@ -763,10 +746,7 @@ function Ordenes({ lookups, onCreated }) {
             </select>
           </Field>
           <Field label="Localidad">
-            <select value={form.locality_id} onChange={set('locality_id')}>
-              <option value="">—</option>
-              {lookups.localities?.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-            </select>
+            <input value={form.locality} onChange={set('locality')} placeholder="Ej. CABA" />
           </Field>
           <Field label="Estado">
             <select value={form.status_id} onChange={set('status_id')}>
@@ -825,7 +805,7 @@ function money(n) {
 function Clientes({ lookups, onCreated }) {
   const [rows, setRows] = useState([]);
   const [view, setView] = useState('all');
-  const [form, setForm] = useState({ name: '', phone: '', email: '', provider_id: '', locality_id: '', external_id: '', address: '', notes: '' });
+  const [form, setForm] = useState({ name: '', phone: '', email: '', provider_id: '', locality: '', external_id: '', address: '', notes: '' });
   const [importProvider, setImportProvider] = useState('');
   const [importMsg, setImportMsg] = useState('');
   const [busy, setBusy] = useState(false);
@@ -851,10 +831,10 @@ function Clientes({ lookups, onCreated }) {
       body: {
         ...form,
         provider_id: form.provider_id ? Number(form.provider_id) : null,
-        locality_id: form.locality_id ? Number(form.locality_id) : null,
+        locality: (form.locality || '').trim() || null,
       },
     });
-    setForm({ name: '', phone: '', email: '', provider_id: form.provider_id, locality_id: '', external_id: '', address: '', notes: '' });
+    setForm({ name: '', phone: '', email: '', provider_id: form.provider_id, locality: '', external_id: '', address: '', notes: '' });
     onCreated?.();
     load();
   }
@@ -879,6 +859,14 @@ function Clientes({ lookups, onCreated }) {
       setImportMsg(err.message);
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function downloadTemplate() {
+    try {
+      await downloadFile('/api/clients/template.xlsx', 'plantilla-clientes-salesforce.xlsx');
+    } catch (err) {
+      setImportMsg(err.message);
     }
   }
 
@@ -917,10 +905,7 @@ function Clientes({ lookups, onCreated }) {
           </Field>
           <Field label="ID Salesforce"><input value={form.external_id} onChange={set('external_id')} /></Field>
           <Field label="Localidad">
-            <select value={form.locality_id} onChange={set('locality_id')}>
-              <option value="">—</option>
-              {lookups.localities?.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-            </select>
+            <input value={form.locality} onChange={set('locality')} placeholder="Ej. CABA" />
           </Field>
           <Field label="Dirección"><input value={form.address} onChange={set('address')} /></Field>
           <Field label="Notas"><input value={form.notes} onChange={set('notes')} /></Field>
@@ -938,7 +923,7 @@ function Clientes({ lookups, onCreated }) {
               {lookups.providers?.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.kind})</option>)}
             </select>
           </Field>
-          <button className="ghost" type="button" onClick={() => downloadFile('/api/clients/template.xlsx', 'plantilla-clientes-salesforce.xlsx')}>
+          <button className="ghost" type="button" onClick={downloadTemplate}>
             Descargar plantilla
           </button>
           <Field label="Archivo .xlsx">
@@ -961,7 +946,7 @@ function Clientes({ lookups, onCreated }) {
               <td>{originLabel(c)}</td>
               <td>{c.source === 'excel' ? 'Excel' : 'Manual'}</td>
               <td>{c.external_id || '—'}</td>
-              <td>{c.locality_name || '—'}</td>
+              <td>{c.locality || '—'}</td>
               <td>{c.phone}</td>
             </tr>
           ))}
@@ -973,29 +958,43 @@ function Clientes({ lookups, onCreated }) {
 
 function Tarifas({ lookups }) {
   const [rows, setRows] = useState([]);
+  const [error, setError] = useState('');
   const [form, setForm] = useState({
     name: '', scope: 'proveedor', provider_id: '', technician_id: '',
     income_fixed: 0, income_per_hour: 0, income_per_km: 0, income_parts_pct: 0,
     cost_fixed: 0, cost_per_hour: 0, cost_per_km: 0, cost_parts_pct: 100,
   });
-  async function load() { setRows(await api('/api/tariffs')); }
-  useEffect(() => { load().catch(console.error); }, []);
+  async function load() {
+    try {
+      setError('');
+      setRows(await api('/api/tariffs'));
+    } catch (err) {
+      setRows([]);
+      setError(err.message);
+    }
+  }
+  useEffect(() => { load(); }, []);
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
   async function create(e) {
     e.preventDefault();
-    await api('/api/tariffs', {
-      method: 'POST',
-      body: {
-        ...form,
-        provider_id: form.scope === 'proveedor' ? Number(form.provider_id) : null,
-        technician_id: form.scope === 'tecnico' ? Number(form.technician_id) : null,
-      },
-    });
-    load();
+    try {
+      await api('/api/tariffs', {
+        method: 'POST',
+        body: {
+          ...form,
+          provider_id: form.scope === 'proveedor' ? Number(form.provider_id) : null,
+          technician_id: form.scope === 'tecnico' ? Number(form.technician_id) : null,
+        },
+      });
+      load();
+    } catch (err) {
+      setError(err.message);
+    }
   }
   return (
     <section>
       <h2>Tarifario</h2>
+      {error && <p className="error">{error}</p>}
       <p className="meta">
         Fijo: monto por orden. Variable: horas, km y % sobre venta de repuestos (ingreso) o sobre costo de repuestos (egreso).
         La tarifa de prestador/proveedor calcula lo que cobrás; la de técnico, lo que te cuesta.
@@ -1027,19 +1026,15 @@ function Tarifas({ lookups }) {
             </Field>
           )}
         </div>
-        <strong>Parte fija y variable de ingreso</strong>
         <div className="row">
-          <Field label="Fijo por orden"><input type="number" value={form.income_fixed} onChange={set('income_fixed')} /></Field>
-          <Field label="$ por hora"><input type="number" value={form.income_per_hour} onChange={set('income_per_hour')} /></Field>
-          <Field label="$ por km"><input type="number" value={form.income_per_km} onChange={set('income_per_km')} /></Field>
-          <Field label="% sobre venta de repuestos"><input type="number" value={form.income_parts_pct} onChange={set('income_parts_pct')} /></Field>
-        </div>
-        <strong>Parte fija y variable de costo</strong>
-        <div className="row">
-          <Field label="Fijo por orden"><input type="number" value={form.cost_fixed} onChange={set('cost_fixed')} /></Field>
-          <Field label="$ por hora"><input type="number" value={form.cost_per_hour} onChange={set('cost_per_hour')} /></Field>
-          <Field label="$ por km"><input type="number" value={form.cost_per_km} onChange={set('cost_per_km')} /></Field>
-          <Field label="% del costo de repuestos"><input type="number" value={form.cost_parts_pct} onChange={set('cost_parts_pct')} /></Field>
+          <Field label="Ingreso fijo"><input type="number" value={form.income_fixed} onChange={set('income_fixed')} /></Field>
+          <Field label="Ingreso / hora"><input type="number" value={form.income_per_hour} onChange={set('income_per_hour')} /></Field>
+          <Field label="Ingreso / km"><input type="number" value={form.income_per_km} onChange={set('income_per_km')} /></Field>
+          <Field label="Ingreso % repuestos"><input type="number" value={form.income_parts_pct} onChange={set('income_parts_pct')} /></Field>
+          <Field label="Costo fijo"><input type="number" value={form.cost_fixed} onChange={set('cost_fixed')} /></Field>
+          <Field label="Costo / hora"><input type="number" value={form.cost_per_hour} onChange={set('cost_per_hour')} /></Field>
+          <Field label="Costo / km"><input type="number" value={form.cost_per_km} onChange={set('cost_per_km')} /></Field>
+          <Field label="Costo % repuestos"><input type="number" value={form.cost_parts_pct} onChange={set('cost_parts_pct')} /></Field>
         </div>
         <button className="primary" type="submit">Guardar tarifa</button>
       </form>
@@ -1072,17 +1067,25 @@ function Resultados() {
   const [group, setGroup] = useState('proveedor');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
+  const [error, setError] = useState('');
   const [data, setData] = useState({ rows: [], totals: { orders: 0, income: 0, cost: 0, profit: 0 } });
   async function load() {
     const q = new URLSearchParams({ group });
     if (from) q.set('from', from);
     if (to) q.set('to', to);
-    setData(await api(`/api/results?${q}`));
+    try {
+      setError('');
+      setData(await api(`/api/results?${q}`));
+    } catch (err) {
+      setData({ rows: [], totals: { orders: 0, income: 0, cost: 0, profit: 0 } });
+      setError(err.message);
+    }
   }
-  useEffect(() => { load().catch(console.error); }, [group, from, to]);
+  useEffect(() => { load(); }, [group, from, to]);
   return (
     <section>
       <h2>Ganancias y costos</h2>
+      {error && <p className="error">{error}</p>}
       <p className="meta">Se calcula con el tarifario (fijo + horas/km/repuestos) de cada orden. Podés ver el resultado por prestador/proveedor, por cliente o por técnico.</p>
       <div className="row" style={{ marginBottom: 16 }}>
         <Field label="Agrupar">
@@ -1230,20 +1233,35 @@ function Tecnicos({ onCreated }) {
 
 function Proveedores({ onCreated }) {
   const [rows, setRows] = useState([]);
+  const [error, setError] = useState('');
   const [form, setForm] = useState({ name: '', kind: 'proveedor', contact: '', notes: '' });
-  async function load() { setRows(await api('/api/providers')); }
-  useEffect(() => { load().catch(console.error); }, []);
+  async function load() {
+    try {
+      setError('');
+      setRows(await api('/api/providers'));
+    } catch (err) {
+      setRows([]);
+      setError(err.message);
+    }
+  }
+  useEffect(() => { load(); }, []);
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
   async function create(e) {
     e.preventDefault();
-    await api('/api/providers', { method: 'POST', body: form });
-    onCreated?.();
-    load();
+    try {
+      await api('/api/providers', { method: 'POST', body: form });
+      setForm({ name: '', kind: form.kind, contact: '', notes: '' });
+      onCreated?.();
+      load();
+    } catch (err) {
+      setError(err.message);
+    }
   }
   return (
     <section>
       <h2>Proveedores y prestadores</h2>
       <p className="meta">Cada origen es una base distinta de clientes y/o repuestos.</p>
+      {error && <p className="error">{error}</p>}
       <form className="card row" onSubmit={create} style={{ marginBottom: 16 }}>
         <Field label="Nombre"><input required value={form.name} onChange={set('name')} /></Field>
         <Field label="Tipo">
@@ -1336,40 +1354,58 @@ function Reglas({ lookups }) {
 
 function WhatsApp({ lookups }) {
   const [rows, setRows] = useState([]);
+  const [error, setError] = useState('');
   const [form, setForm] = useState({
     name: '',
     body: 'Hola {cliente}, te escribimos por tu servicio “{trabajo}” (orden #{orden}).',
     status_id: '',
     auto_open: false,
   });
-  async function load() { setRows(await api('/api/whatsapp/templates')); }
-  useEffect(() => { load().catch(console.error); }, []);
+  async function load() {
+    try {
+      setError('');
+      setRows(await api('/api/whatsapp/templates'));
+    } catch (err) {
+      setRows([]);
+      setError(err.message);
+    }
+  }
+  useEffect(() => { load(); }, []);
   const set = (k) => (e) => {
     const v = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
     setForm((f) => ({ ...f, [k]: v }));
   };
   async function create(e) {
     e.preventDefault();
-    await api('/api/whatsapp/templates', {
-      method: 'POST',
-      body: {
-        ...form,
-        status_id: form.status_id ? Number(form.status_id) : null,
-      },
-    });
-    setForm({ name: '', body: form.body, status_id: '', auto_open: false });
-    load();
+    try {
+      await api('/api/whatsapp/templates', {
+        method: 'POST',
+        body: {
+          ...form,
+          status_id: form.status_id ? Number(form.status_id) : null,
+        },
+      });
+      setForm({ name: '', body: form.body, status_id: '', auto_open: false });
+      load();
+    } catch (err) {
+      setError(err.message);
+    }
   }
   async function toggleAuto(t) {
-    await api(`/api/whatsapp/templates/${t.id}`, {
-      method: 'PATCH',
-      body: { auto_open: !t.auto_open },
-    });
-    load();
+    try {
+      await api(`/api/whatsapp/templates/${t.id}`, {
+        method: 'PATCH',
+        body: { auto_open: !t.auto_open },
+      });
+      load();
+    } catch (err) {
+      setError(err.message);
+    }
   }
   return (
     <section>
       <h2>WhatsApp con clientes</h2>
+      {error && <p className="error">{error}</p>}
       <p className="meta">
         Hoy es viable con enlaces a WhatsApp (wa.me): abrís el chat con el texto ya armado y lo enviás vos.
         Un bot completo (respuesta automática sin abrir WhatsApp) es posible más adelante con la API oficial de Meta / WhatsApp Business (número verificado y plantillas aprobadas).

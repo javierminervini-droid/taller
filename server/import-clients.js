@@ -51,14 +51,10 @@ function mapRow(row) {
   };
 }
 
-function localityId(name, province) {
+function localityText(name, province) {
   if (!name) return null;
-  const existing = db.prepare(
-    'SELECT id FROM localities WHERE lower(name) = lower(?) LIMIT 1'
-  ).get(name);
-  if (existing) return existing.id;
-  const result = db.prepare('INSERT INTO localities (name, province) VALUES (?, ?)').run(name, province || null);
-  return Number(result.lastInsertRowid);
+  if (province) return `${name}, ${province}`;
+  return name;
 }
 
 export function buildTemplateBuffer() {
@@ -86,11 +82,11 @@ export function importClientsFromBuffer(buffer, providerId) {
     'SELECT id FROM clients WHERE provider_id = ? AND external_id = ? LIMIT 1'
   );
   const insert = db.prepare(
-    `INSERT INTO clients (provider_id, external_id, name, phone, email, locality_id, address, notes, source)
+    `INSERT INTO clients (provider_id, external_id, name, phone, email, locality, address, notes, source)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'excel')`
   );
   const update = db.prepare(
-    `UPDATE clients SET name=?, phone=?, email=?, locality_id=?, address=?, notes=?, source='excel'
+    `UPDATE clients SET name=?, phone=?, email=?, locality=?, address=?, notes=?, source='excel'
      WHERE id=?`
   );
 
@@ -104,14 +100,14 @@ export function importClientsFromBuffer(buffer, providerId) {
       errors.push(`Fila ${i + 2}: falta Nombre`);
       continue;
     }
-    const locId = localityId(row.locality, row.province);
+    const locality = localityText(row.locality, row.province);
     const ext = row.external_id || null;
     const existing = ext ? find.get(providerId, ext) : null;
     if (existing) {
-      update.run(row.name, row.phone || null, row.email || null, locId, row.address || null, row.notes || null, existing.id);
+      update.run(row.name, row.phone || null, row.email || null, locality, row.address || null, row.notes || null, existing.id);
       updated += 1;
     } else {
-      insert.run(providerId, ext, row.name, row.phone || null, row.email || null, locId, row.address || null, row.notes || null);
+      insert.run(providerId, ext, row.name, row.phone || null, row.email || null, locality, row.address || null, row.notes || null);
       created += 1;
     }
   }

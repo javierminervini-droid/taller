@@ -30,7 +30,12 @@ export async function api(path, options = {}) {
 
 export async function downloadFile(path, filename) {
   const res = await api(path, { raw: true });
-  if (!res.ok) throw new Error('No se pudo descargar el archivo');
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    const err = new Error(data.error || 'No se pudo descargar el archivo');
+    err.status = res.status;
+    throw err;
+  }
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
