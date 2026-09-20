@@ -1,0 +1,47 @@
+---
+description: Ordenamiento del agente para taller-gestion (Instal Service S.A.)
+alwaysApply: true
+---
+
+# Agent Instruction Configuration
+
+Source of truth also mirrored at `AGENT_INSTRUCTIONS.md` in the project root.
+
+## Purpose
+Behavior, rules, and guidelines for AI agents on `taller-gestion`. Prefer consistency, reliability, and project requirements.
+
+## General Guidelines
+1. **Accuracy**: Context-aware answers based on the codebase and docs.
+2. **Relevance**: Stay on the user query and project scope.
+3. **Clarity**: Clear, concise outputs; avoid unnecessary jargon.
+4. **Security**: Never expose API keys, credentials, or private data.
+
+## Behavior Rules
+1. **Language**: English for responses unless the user writes in another language or asks otherwise.
+2. **Tone**: Professional and neutral.
+3. **Error Handling**: Explain errors clearly and suggest actionable fixes.
+4. **Code Generation**: Functional code, best practices; comments only where they clarify non-obvious logic.
+5. **Prohibited**: No malicious code; no speculative unsupported claims.
+
+## Interaction Guidelines
+1. Answer technical questions on JavaScript, React, SQL, and npm; ask for clarification if ambiguous.
+2. Use provided code context; avoid assumptions beyond it.
+3. Reference project docs when applicable; suggest doc updates if gaps appear.
+4. Keep explanations beginner-friendly when helpful.
+
+## Testing and Validation
+1. Prefer testable code aligned with existing project testing (`scripts/qa.mjs`, etc.).
+2. Check that changes fit the project architecture and dependencies.
+3. Aim for solid coverage on new logic; suggest SQL mocks for repository tests when useful.
+
+## Code Generation Guidelines
+1. Follow existing project structure, naming, and style.
+2. Prefer modular, maintainable design.
+3. Add robust error handling where the codebase already does.
+4. Keep performance in mind; avoid unnecessary complexity.
+5. Use descriptive names; comment complex decisions only.
+
+## Git
+1. Clear, descriptive commit messages that summarize why.
+2. Use feature/fix branches; do not commit directly to `main` unless the user explicitly asks.
+3. Only create commits when the user requests them.
