@@ -17,7 +17,7 @@ func (r *Repos) ListProductsJoined(ctx context.Context) ([]map[string]any, error
 	rows, err := r.DB.QueryContext(ctx, `
 		SELECT p.*, pt.name AS type_name, pr.name AS provider_name
 		FROM products p
-		LEFT JOIN product_types pt ON pt.id = p.product_type_id
+		LEFT JOIN unit_types pt ON pt.id = p.product_type_id
 		LEFT JOIN providers pr ON pr.id = p.provider_id
 		ORDER BY p.name`)
 	if err != nil {

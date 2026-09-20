@@ -18,6 +18,7 @@ func (s *Services) CreateTechnician(ctx context.Context, claims *utils.Claims, b
 	t := &models.Technician{
 		UserID:    utils.OptInt64(b["user_id"]),
 		Name:      utils.StrOr(b["name"], ""),
+		Code:      utils.OptStr(b["code"]),
 		Phone:     utils.OptStr(b["phone"]),
 		Specialty: utils.OptStr(b["specialty"]),
 		Active:    true,

@@ -49,13 +49,13 @@ func (s *Services) GenerateFollowups(ctx context.Context) error {
 			now := time.Now()
 			notes := rule.Name
 			f := &models.Followup{
-				ServiceOrderID: orderID,
-				RuleID:         &rule.ID,
-				AssignedUserID: assigneeID,
-				DueAt:          &now,
-				Notes:          &notes,
-				Status:         "pendiente",
-				CreatedAt:      now,
+				ServiceRequestID: orderID,
+				RuleID:           &rule.ID,
+				AssignedUserID:   assigneeID,
+				DueAt:            &now,
+				Notes:            &notes,
+				Status:           "pendiente",
+				CreatedAt:        now,
 			}
 			if err := s.Repos.InsertFollowup(ctx, f); err != nil {
 				return err

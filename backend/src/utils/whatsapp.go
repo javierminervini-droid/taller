@@ -65,11 +65,19 @@ func OrderWhatsAppVars(order map[string]any) map[string]string {
 		filterNonEmpty(str("client_address"), str("locality")),
 		", ",
 	))
+	fecha := str("visit_date")
+	if fecha == "" {
+		fecha = str("scheduled_date")
+	}
+	trabajo := str("title")
+	if trabajo == "" {
+		trabajo = str("appliance_model")
+	}
 	return map[string]string{
 		"cliente":   str("client_name"),
-		"trabajo":   str("title"),
+		"trabajo":   trabajo,
 		"estado":    str("status_name"),
-		"fecha":     str("scheduled_date"),
+		"fecha":     fecha,
 		"hora":      str("scheduled_time"),
 		"tecnico":   str("technician_name"),
 		"direccion": addr,

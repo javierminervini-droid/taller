@@ -8,9 +8,9 @@ import (
 	"taller-gestion/backend/src/utils"
 )
 
-func (r *Repos) PendingFollowupExists(ctx context.Context, orderID, ruleID int64) (bool, error) {
+func (r *Repos) PendingFollowupExists(ctx context.Context, requestID, ruleID int64) (bool, error) {
 	return r.DB.NewSelect().Model((*models.Followup)(nil)).
-		Where("service_order_id = ? AND rule_id = ? AND status = 'pendiente'", orderID, ruleID).
+		Where("service_request_id = ? AND rule_id = ? AND status = 'pendiente'", requestID, ruleID).
 		Exists(ctx)
 }
 
@@ -21,12 +21,13 @@ func (r *Repos) InsertFollowup(ctx context.Context, f *models.Followup) error {
 
 func (r *Repos) ListFollowups(ctx context.Context, status string) ([]map[string]any, error) {
 	rows, err := r.DB.QueryContext(ctx, `
-		SELECT f.*, o.title AS order_title,
-		       to_char(o.scheduled_date, 'YYYY-MM-DD') AS scheduled_date,
+		SELECT f.*, COALESCE(o.title, o.appliance_model, '') AS order_title,
+		       to_char(o.visit_date, 'YYYY-MM-DD') AS scheduled_date,
+		       to_char(o.visit_date, 'YYYY-MM-DD') AS visit_date,
 		       c.name AS client_name,
 		       u.full_name AS assigned_name, r.name AS rule_name, s.name AS order_status
 		FROM followups f
-		JOIN service_orders o ON o.id = f.service_order_id
+		JOIN service_requests o ON o.id = f.service_request_id
 		JOIN clients c ON c.id = o.client_id
 		JOIN service_statuses s ON s.id = o.status_id
 		LEFT JOIN users u ON u.id = f.assigned_user_id
@@ -59,7 +60,7 @@ func (r *Repos) UpdateFollowupStatus(ctx context.Context, id int64, status strin
 
 func (r *Repos) OrderIDsForStatusTrigger(ctx context.Context, statusID int64) ([]int64, error) {
 	rows, err := r.DB.QueryContext(ctx, `
-		SELECT o.id FROM service_orders o
+		SELECT o.id FROM service_requests o
 		JOIN service_statuses s ON s.id = o.status_id
 		WHERE o.status_id = ? AND s.is_closed = FALSE`, statusID)
 	if err != nil {
@@ -79,7 +80,7 @@ func (r *Repos) OrderIDsForStatusTrigger(ctx context.Context, statusID int64) ([
 
 func (r *Repos) OrderIDsForElapsedTrigger(ctx context.Context, statusID int64, hours int) ([]int64, error) {
 	rows, err := r.DB.QueryContext(ctx, `
-		SELECT o.id FROM service_orders o
+		SELECT o.id FROM service_requests o
 		JOIN service_statuses s ON s.id = o.status_id
 		WHERE o.status_id = ? AND s.is_closed = FALSE
 		  AND COALESCE(o.started_at, o.created_at) <= NOW() - make_interval(hours => ?)`,

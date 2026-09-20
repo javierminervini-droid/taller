@@ -11,16 +11,20 @@ import (
 )
 
 func parseOrderFilters(c *gin.Context) repositories.OrderFilters {
+	unitTypeID := c.Query("unitTypeId")
+	if unitTypeID == "" {
+		unitTypeID = c.Query("productTypeId")
+	}
 	return repositories.OrderFilters{
-		Date:          c.Query("date"),
-		Year:          c.Query("year"),
-		Month:         c.Query("month"),
-		TechnicianID:  c.Query("technicianId"),
-		ProductTypeID: c.Query("productTypeId"),
-		ProviderID:    c.Query("providerId"),
-		Locality:      c.Query("locality"),
-		StatusID:      c.Query("statusId"),
-		ClientID:      c.Query("clientId"),
+		Date:         c.Query("date"),
+		Year:         c.Query("year"),
+		Month:        c.Query("month"),
+		TechnicianID: c.Query("technicianId"),
+		UnitTypeID:   unitTypeID,
+		ProviderID:   c.Query("providerId"),
+		Locality:     c.Query("locality"),
+		StatusID:     c.Query("statusId"),
+		ClientID:     c.Query("clientId"),
 	}
 }
 

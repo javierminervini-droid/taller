@@ -42,7 +42,7 @@ function callClient(phone) {
 }
 
 function orderAddress(order) {
-  return [order.client_address, order.locality].filter(Boolean).join(', ');
+  return [order.client_address, order.locality || order.client_locality].filter(Boolean).join(', ');
 }
 
 function googleMapsRouteUrl(orders) {
@@ -67,10 +67,19 @@ function formatLoadDate(value) {
   return `${d}/${m}/${y}`;
 }
 
+function unitTypesOf(lookups) {
+  return lookups.unitTypes || lookups.productTypes || [];
+}
+
+function techLabel(t) {
+  return t.code ? `${t.code} · ${t.name}` : t.name;
+}
+
 function printOrder(order) {
   const addr = orderAddress(order) || 'Sin dirección';
-  const product = order.product_label || order.product_name || '';
-  const html = `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Orden #${order.id}</title>
+  const model = order.appliance_model || order.product_label || order.product_name || '';
+  const fail = order.reported_failure || order.description || '';
+  const html = `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Solicitud #${order.id}</title>
     <style>
       body{font-family:"Segoe UI",sans-serif;padding:24px;color:#1c1917}
       h1{margin:0 0 4px;font-size:22px}
@@ -79,22 +88,27 @@ function printOrder(order) {
       th,td{border:1px solid #d6d3d1;padding:8px 10px;text-align:left}
       th{width:180px;background:#f5f5f4}
     </style></head><body>
-    <h1>Orden de servicio #${order.id}</h1>
-    <p class="muted">Fecha carga: ${formatLoadDate(order.load_date || order.client_created_at)} · ${order.status_name || ''}</p>
+    <h1>Solicitud de servicio #${order.id}</h1>
+    <p class="muted">Fecha: ${formatLoadDate(order.received_at || order.load_date)} · ${order.status_name || ''}</p>
     <table>
       <tr><th>Estado</th><td>${order.status_name || ''}</td></tr>
-      <tr><th>Fecha carga</th><td>${formatLoadDate(order.load_date || order.client_created_at)}</td></tr>
+      <tr><th>Notas</th><td>${order.ops_notes || ''}</td></tr>
+      <tr><th>Pedido de servicio</th><td>${order.provider_order_ref || ''}</td></tr>
+      <tr><th>Nº de orden</th><td>${order.internal_order_no || ''}</td></tr>
+      <tr><th>Tipo solicitud</th><td>${order.request_kind || ''}</td></tr>
       <tr><th>Cliente</th><td>${order.client_name || ''}</td></tr>
-      <tr><th>Teléfono</th><td>${order.client_phone || ''}</td></tr>
+      <tr><th>Teléfono</th><td>${order.client_phone || ''}${order.client_phone_alt ? ` / ${order.client_phone_alt}` : ''}</td></tr>
       <tr><th>Dirección</th><td>${addr}</td></tr>
-      <tr><th>Localidad</th><td>${order.locality || ''}</td></tr>
-      <tr><th>Tipo de producto</th><td>${order.product_type_name || ''}</td></tr>
-      <tr><th>Producto</th><td>${product}</td></tr>
+      <tr><th>Localidad</th><td>${order.locality || order.client_locality || ''}</td></tr>
+      <tr><th>Tipo unidad</th><td>${order.unit_type_name || ''}</td></tr>
+      <tr><th>Modelo</th><td>${model}</td></tr>
+      <tr><th>Falla</th><td>${fail}</td></tr>
+      <tr><th>Fecha visita</th><td>${formatLoadDate(order.visit_date)}</td></tr>
+      <tr><th>Técnico</th><td>${order.technician_code || order.technician_name || ''}</td></tr>
+      <tr><th>Diagnóstico / presupuesto</th><td>${order.diagnosis_notes || ''}</td></tr>
       <tr><th>Origen</th><td>${order.provider_name || 'Carga propia'}${order.provider_kind ? ` (${order.provider_kind})` : ''}</td></tr>
-      <tr><th>Trabajo</th><td>${order.title || ''}</td></tr>
-      <tr><th>Detalle</th><td>${order.description || ''}</td></tr>
     </table>
-    <p class="muted">Instal Service S.A. — plantilla provisional. Podés enviar tu formato de orden para replicarlo.</p>
+    <p class="muted">Instal Service S.A.</p>
     <script>window.onload=()=>window.print()<\/script>
     </body></html>`;
   const w = window.open('', '_blank', 'noopener,noreferrer,width=800,height=900');
@@ -162,10 +176,10 @@ function Filters({ lookups, filters, setFilters, extra }) {
           {lookups.technicians?.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
         </select>
       </Field>
-      <Field label="Tipo de producto">
-        <select value={filters.productTypeId || ''} onChange={set('productTypeId')}>
+      <Field label="Tipo de unidad">
+        <select value={filters.unitTypeId || filters.productTypeId || ''} onChange={set('unitTypeId')}>
           <option value="">Todos</option>
-          {lookups.productTypes?.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+          {unitTypesOf(lookups).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
         </select>
       </Field>
       <Field label="Proveedor / prestador">
@@ -229,20 +243,24 @@ function Agenda({ lookups, user, onLookups }) {
   const canEditAll = user.role === 'admin' || user.role === 'coordinador';
   const isTech = user.role === 'tecnico';
   const [filters, setFilters] = useState({ date: today() });
-  const [data, setData] = useState({ orders: [], technicians: [] });
+  const [data, setData] = useState({ requests: [], technicians: [] });
   const [clients, setClients] = useState([]);
   const [newType, setNewType] = useState('');
   const [draft, setDraft] = useState(null);
   const [msg, setMsg] = useState('');
+  const types = unitTypesOf(lookups);
 
   async function load() {
     setMsg('');
     try {
       const agenda = await api(`/api/agenda${qs(filters)}`);
-      setData(agenda);
+      setData({
+        ...agenda,
+        requests: agenda.requests || agenda.orders || [],
+      });
     } catch (err) {
       setMsg(err.message || 'No se pudo cargar la agenda');
-      setData({ orders: [], technicians: [] });
+      setData({ requests: [], technicians: [] });
     }
     try {
       setClients(await api('/api/clients'));
@@ -254,7 +272,7 @@ function Agenda({ lookups, user, onLookups }) {
 
   async function patchOrder(order, fields) {
     try {
-      const res = await api(`/api/orders/${order.id}`, { method: 'PATCH', body: fields });
+      const res = await api(`/api/service-requests/${order.id}`, { method: 'PATCH', body: fields });
       if (res.whatsapp?.auto_open && res.whatsapp.url && canEditAll) {
         if (window.confirm(`¿Abrir WhatsApp al cliente con la plantilla “${res.whatsapp.template}”?`)) {
           openWhatsApp(res.whatsapp.url);
@@ -268,7 +286,7 @@ function Agenda({ lookups, user, onLookups }) {
 
   async function sendWhatsApp(order) {
     try {
-      const msg = await api(`/api/orders/${order.id}/whatsapp`);
+      const msg = await api(`/api/service-requests/${order.id}/whatsapp`);
       openWhatsApp(msg.url);
     } catch (err) {
       setMsg(err.message);
@@ -288,14 +306,14 @@ function Agenda({ lookups, user, onLookups }) {
   async function addType(e) {
     e.preventDefault();
     if (!newType.trim()) return;
-    await api('/api/product-types', { method: 'POST', body: { name: newType.trim() } });
+    await api('/api/unit-types', { method: 'POST', body: { name: newType.trim() } });
     setNewType('');
     onLookups?.();
   }
 
   async function renameType(id, name) {
     if (!name.trim()) return;
-    await api(`/api/product-types/${id}`, { method: 'PATCH', body: { name: name.trim() } });
+    await api(`/api/unit-types/${id}`, { method: 'PATCH', body: { name: name.trim() } });
     onLookups?.();
     load();
   }
@@ -306,19 +324,24 @@ function Agenda({ lookups, user, onLookups }) {
       setMsg('La fila nueva necesita un cliente.');
       return;
     }
-    const productLabel = (draft.product_label || '').trim();
-    await api('/api/orders', {
+    await api('/api/service-requests', {
       method: 'POST',
       body: {
         client_id: Number(draft.client_id),
         technician_id: draft.technician_id ? Number(draft.technician_id) : null,
-        product_type_id: draft.product_type_id ? Number(draft.product_type_id) : null,
-        product_label: productLabel || null,
+        unit_type_id: draft.unit_type_id ? Number(draft.unit_type_id) : null,
+        appliance_model: (draft.appliance_model || '').trim() || null,
+        reported_failure: (draft.reported_failure || '').trim() || null,
         provider_id: draft.provider_id ? Number(draft.provider_id) : null,
         locality: (draft.locality || '').trim() || null,
         status_id: Number(draft.status_id),
-        title: productLabel || 'Servicio',
-        scheduled_date: filters.date || today(),
+        request_kind: draft.request_kind || null,
+        provider_order_ref: (draft.provider_order_ref || '').trim() || null,
+        internal_order_no: (draft.internal_order_no || '').trim() || null,
+        ops_notes: (draft.ops_notes || '').trim() || null,
+        diagnosis_notes: (draft.diagnosis_notes || '').trim() || null,
+        received_at: draft.received_at || today(),
+        visit_date: filters.date || today(),
       },
     });
     setDraft(null);
@@ -330,23 +353,30 @@ function Agenda({ lookups, user, onLookups }) {
     setDraft({
       client_id: '',
       technician_id: '',
-      product_type_id: '',
-      product_label: '',
+      unit_type_id: '',
+      appliance_model: '',
+      reported_failure: '',
       provider_id: '',
       locality: '',
+      request_kind: 'G',
+      provider_order_ref: '',
+      internal_order_no: '',
+      ops_notes: '',
+      diagnosis_notes: '',
+      received_at: today(),
       status_id: lookups.statuses?.[0]?.id || '',
     });
   }
 
-  const rows = data.orders || [];
+  const rows = data.requests || [];
   const route = googleMapsRouteUrl(rows);
 
   return (
     <section>
       <h2>{isTech ? 'Mi agenda del día' : 'Agenda diaria'}</h2>
       <p className="meta">
-        Vista en lista, como una planilla: cada celda se edita al escribir y se guarda al salir del campo.
-        {canEditAll ? ' Como administración podés cambiar todos los campos y dar de alta tipos de producto.' : ' Solo tus órdenes del día.'}
+        Planilla alineada a solicitudes de servicio: cliente + solicitud (pedido, G/FG, modelo, falla, visita).
+        {canEditAll ? ' Podés editar celdas y dar de alta tipos de unidad.' : ' Solo tus visitas del día.'}
       </p>
       {isTech ? (
         <div className="row" style={{ marginBottom: 12 }}>
@@ -369,13 +399,13 @@ function Agenda({ lookups, user, onLookups }) {
 
       {canEditAll && (
         <div className="card" style={{ marginBottom: 12 }}>
-          <strong>Tipos de producto</strong>
+          <strong>Tipos de unidad</strong>
           <div className="type-chips" style={{ marginTop: 8 }}>
-            {lookups.productTypes?.map((t) => (
+            {types.map((t) => (
               <SheetInput key={t.id} value={t.name} onCommit={(name) => renameType(t.id, name)} />
             ))}
             <form className="row" onSubmit={addType}>
-              <input placeholder="Nuevo tipo (ej. Lavarropas)" value={newType} onChange={(e) => setNewType(e.target.value)} />
+              <input placeholder="Nuevo tipo (ej. HELADERA)" value={newType} onChange={(e) => setNewType(e.target.value)} />
               <button className="ghost" type="submit">Agregar tipo</button>
             </form>
           </div>
@@ -389,15 +419,22 @@ function Agenda({ lookups, user, onLookups }) {
           <thead>
             <tr>
               <th>Estado</th>
-              <th>Fecha carga</th>
+              <th>Notas</th>
+              <th>Fecha</th>
+              <th>Pedido de servicio</th>
+              <th>Nº orden</th>
+              <th>G/FG</th>
+              <th>Tipo unidad</th>
               <th>Cliente</th>
-              <th>Teléfono</th>
-              <th>Dirección</th>
               <th>Localidad</th>
-              <th>Tipo de producto</th>
-              <th>Producto</th>
-              <th>Origen</th>
-              <th>Imprimir</th>
+              <th>Dirección</th>
+              <th>Teléfono</th>
+              <th>Fecha visita</th>
+              <th>Modelo</th>
+              <th>Falla</th>
+              <th>Técnico</th>
+              <th>Diagnóstico / presup.</th>
+              <th>Acciones</th>
             </tr>
           </thead>
           <tbody>
@@ -408,11 +445,47 @@ function Agenda({ lookups, user, onLookups }) {
                     {lookups.statuses?.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                   </SheetSelect>
                 </td>
-                <td className="sheet-readonly" title={o.client_source === 'excel' ? 'Alta por importación Excel' : 'Alta manual'}>
-                  {formatLoadDate(o.load_date || o.client_created_at)}
-                  <div className="meta" style={{ padding: '0 8px 4px' }}>
-                    {o.client_source === 'excel' ? 'Importación' : 'Alta manual'}
-                  </div>
+                <td>
+                  <SheetInput value={o.ops_notes || ''} onCommit={(v) => patchOrder(o, { ops_notes: v || null })} />
+                </td>
+                <td>
+                  <SheetInput
+                    type="date"
+                    value={(o.received_at || '').slice(0, 10)}
+                    disabled={!canEditAll}
+                    onCommit={(v) => patchOrder(o, { received_at: v || null })}
+                  />
+                </td>
+                <td>
+                  <SheetInput
+                    value={o.provider_order_ref || ''}
+                    disabled={!canEditAll}
+                    onCommit={(v) => patchOrder(o, { provider_order_ref: v || null })}
+                  />
+                </td>
+                <td>
+                  <SheetInput
+                    value={o.internal_order_no || ''}
+                    disabled={!canEditAll}
+                    onCommit={(v) => patchOrder(o, { internal_order_no: v || null })}
+                  />
+                </td>
+                <td>
+                  <SheetSelect
+                    value={o.request_kind || ''}
+                    disabled={!canEditAll}
+                    onCommit={(v) => patchOrder(o, { request_kind: v || null })}
+                  >
+                    <option value="">—</option>
+                    <option value="G">G</option>
+                    <option value="FG">FG</option>
+                  </SheetSelect>
+                </td>
+                <td>
+                  <SheetSelect value={o.unit_type_id || ''} onCommit={(v) => patchOrder(o, { unit_type_id: v ? Number(v) : null })}>
+                    <option value="">—</option>
+                    {types.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                  </SheetSelect>
                 </td>
                 <td>
                   <SheetSelect
@@ -424,35 +497,55 @@ function Agenda({ lookups, user, onLookups }) {
                   </SheetSelect>
                 </td>
                 <td>
-                  <SheetInput value={o.client_phone || ''} disabled={!canEditAll} onCommit={(v) => patchClient(o, { phone: v })} />
+                  <SheetInput
+                    value={o.locality || o.client_locality || ''}
+                    onCommit={(v) => {
+                      if (canEditAll) patchClient(o, { locality: v });
+                      patchOrder(o, { locality: v || null });
+                    }}
+                  />
                 </td>
                 <td>
                   <SheetInput value={o.client_address || ''} disabled={!canEditAll} onCommit={(v) => patchClient(o, { address: v })} />
                 </td>
                 <td>
-                  <SheetInput value={o.locality || ''} onCommit={(v) => patchOrder(o, { locality: v || null })} />
-                </td>
-                <td>
-                  <SheetSelect value={o.product_type_id || ''} onCommit={(v) => patchOrder(o, { product_type_id: v ? Number(v) : null })}>
-                    <option value="">—</option>
-                    {lookups.productTypes?.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-                  </SheetSelect>
+                  <SheetInput value={o.client_phone || ''} disabled={!canEditAll} onCommit={(v) => patchClient(o, { phone: v })} />
                 </td>
                 <td>
                   <SheetInput
-                    value={o.product_label || ''}
-                    onCommit={(v) => patchOrder(o, { product_label: v, title: v || o.title })}
+                    type="date"
+                    value={(o.visit_date || '').slice(0, 10)}
+                    onCommit={(v) => patchOrder(o, { visit_date: v || null })}
+                  />
+                </td>
+                <td>
+                  <SheetInput
+                    value={o.appliance_model || o.product_label || ''}
+                    onCommit={(v) => patchOrder(o, { appliance_model: v || null })}
+                  />
+                </td>
+                <td>
+                  <SheetInput
+                    value={o.reported_failure || ''}
+                    onCommit={(v) => patchOrder(o, { reported_failure: v || null })}
                   />
                 </td>
                 <td>
                   <SheetSelect
-                    value={o.provider_id || ''}
-                    disabled={!canEditAll}
-                    onCommit={(v) => patchOrder(o, { provider_id: v ? Number(v) : null })}
+                    value={o.technician_id || ''}
+                    onCommit={(v) => patchOrder(o, { technician_id: v ? Number(v) : null })}
                   >
-                    <option value="">Carga propia</option>
-                    {lookups.providers?.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.kind})</option>)}
+                    <option value="">—</option>
+                    {(data.technicians || lookups.technicians || []).map((t) => (
+                      <option key={t.id} value={t.id}>{techLabel(t)}</option>
+                    ))}
                   </SheetSelect>
+                </td>
+                <td>
+                  <SheetInput
+                    value={o.diagnosis_notes || ''}
+                    onCommit={(v) => patchOrder(o, { diagnosis_notes: v || null })}
+                  />
                 </td>
                 <td className="sheet-actions">
                   {isTech && (
@@ -476,31 +569,56 @@ function Agenda({ lookups, user, onLookups }) {
                     {lookups.statuses?.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                   </SheetSelect>
                 </td>
-                <td className="sheet-readonly meta" style={{ padding: 8 }}>Al guardar</td>
+                <td>
+                  <SheetInput value={draft.ops_notes} onCommit={(v) => setDraft({ ...draft, ops_notes: v })} />
+                </td>
+                <td>
+                  <SheetInput type="date" value={draft.received_at} onCommit={(v) => setDraft({ ...draft, received_at: v })} />
+                </td>
+                <td>
+                  <SheetInput value={draft.provider_order_ref} onCommit={(v) => setDraft({ ...draft, provider_order_ref: v })} />
+                </td>
+                <td>
+                  <SheetInput value={draft.internal_order_no} onCommit={(v) => setDraft({ ...draft, internal_order_no: v })} />
+                </td>
+                <td>
+                  <SheetSelect value={draft.request_kind} onCommit={(v) => setDraft({ ...draft, request_kind: v })}>
+                    <option value="">—</option>
+                    <option value="G">G</option>
+                    <option value="FG">FG</option>
+                  </SheetSelect>
+                </td>
+                <td>
+                  <SheetSelect value={draft.unit_type_id} onCommit={(v) => setDraft({ ...draft, unit_type_id: v })}>
+                    <option value="">—</option>
+                    {types.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                  </SheetSelect>
+                </td>
                 <td>
                   <SheetSelect value={draft.client_id} onCommit={(v) => setDraft({ ...draft, client_id: v })}>
                     <option value="">Cliente…</option>
                     {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                   </SheetSelect>
                 </td>
-                <td colSpan={2} className="meta" style={{ padding: 8 }}>Se completa con el cliente</td>
                 <td>
                   <SheetInput value={draft.locality} onCommit={(v) => setDraft({ ...draft, locality: v })} />
                 </td>
+                <td colSpan={2} className="meta" style={{ padding: 8 }}>Se completa con el cliente</td>
+                <td className="meta" style={{ padding: 8 }}>{filters.date || today()}</td>
                 <td>
-                  <SheetSelect value={draft.product_type_id} onCommit={(v) => setDraft({ ...draft, product_type_id: v })}>
+                  <SheetInput value={draft.appliance_model} onCommit={(v) => setDraft({ ...draft, appliance_model: v })} />
+                </td>
+                <td>
+                  <SheetInput value={draft.reported_failure} onCommit={(v) => setDraft({ ...draft, reported_failure: v })} />
+                </td>
+                <td>
+                  <SheetSelect value={draft.technician_id} onCommit={(v) => setDraft({ ...draft, technician_id: v })}>
                     <option value="">—</option>
-                    {lookups.productTypes?.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                    {lookups.technicians?.map((t) => <option key={t.id} value={t.id}>{techLabel(t)}</option>)}
                   </SheetSelect>
                 </td>
                 <td>
-                  <SheetInput value={draft.product_label} onCommit={(v) => setDraft({ ...draft, product_label: v })} />
-                </td>
-                <td>
-                  <SheetSelect value={draft.provider_id} onCommit={(v) => setDraft({ ...draft, provider_id: v })}>
-                    <option value="">Carga propia</option>
-                    {lookups.providers?.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                  </SheetSelect>
+                  <SheetInput value={draft.diagnosis_notes} onCommit={(v) => setDraft({ ...draft, diagnosis_notes: v })} />
                 </td>
                 <td>
                   <button className="primary sheet-btn" type="button" onClick={addRow}>Guardar fila</button>
@@ -508,7 +626,7 @@ function Agenda({ lookups, user, onLookups }) {
               </tr>
             )}
             {rows.length === 0 && !draft && (
-              <tr><td colSpan={10} className="meta" style={{ padding: 12 }}>No hay órdenes en esta fecha. {canEditAll && 'Usá “Nueva fila” para cargar una.'}</td></tr>
+              <tr><td colSpan={17} className="meta" style={{ padding: 12 }}>No hay solicitudes en esta fecha. {canEditAll && 'Usá “Nueva fila” para cargar una.'}</td></tr>
             )}
           </tbody>
         </table>
@@ -582,15 +700,19 @@ function Ordenes({ lookups, onCreated }) {
   const [total, setTotal] = useState(0);
   const [clients, setClients] = useState([]);
   const [openMonths, setOpenMonths] = useState({});
+  const types = unitTypesOf(lookups);
   const [form, setForm] = useState({
-    title: '', client_id: '', technician_id: '', product_type_id: '', product_label: '', provider_id: '',
-    locality: '', status_id: lookups.statuses?.[0]?.id || '', scheduled_date: today(),
-    description: '',
+    client_id: '', technician_id: '', unit_type_id: '', appliance_model: '', reported_failure: '',
+    provider_id: '', locality: '', status_id: lookups.statuses?.[0]?.id || '', visit_date: today(),
+    received_at: today(), request_kind: 'G', provider_order_ref: '', internal_order_no: '',
+    ops_notes: '', diagnosis_notes: '',
   });
 
   async function load() {
-    const data = await api(`/api/orders${qs(filters)}`);
-    const list = Array.isArray(data) ? data : (data.orders || []);
+    const q = { ...filters };
+    if (q.unitTypeId == null && q.productTypeId) q.unitTypeId = q.productTypeId;
+    const data = await api(`/api/service-requests${qs(q)}`);
+    const list = Array.isArray(data) ? data : (data.requests || data.orders || []);
     setRows(list);
     setTotal(data.total ?? list.length);
     const y = data.years?.length ? data.years : [currentYear];
@@ -598,7 +720,6 @@ function Ordenes({ lookups, onCreated }) {
     if (filters.year && !y.includes(filters.year) && y[0]) {
       setFilters((f) => ({ ...f, year: y[0] }));
     }
-    // Abrir todos los meses con datos cuando el filtro es "Todos"
     if (!filters.month) {
       const open = {};
       for (const o of list) {
@@ -620,20 +741,24 @@ function Ordenes({ lookups, onCreated }) {
 
   async function create(e) {
     e.preventDefault();
-    const productLabel = (form.product_label || '').trim();
-    await api('/api/orders', {
+    await api('/api/service-requests', {
       method: 'POST',
       body: {
         client_id: Number(form.client_id),
         technician_id: form.technician_id ? Number(form.technician_id) : null,
-        product_type_id: form.product_type_id ? Number(form.product_type_id) : null,
-        product_label: productLabel || null,
+        unit_type_id: form.unit_type_id ? Number(form.unit_type_id) : null,
+        appliance_model: (form.appliance_model || '').trim() || null,
+        reported_failure: (form.reported_failure || '').trim() || null,
         provider_id: form.provider_id ? Number(form.provider_id) : null,
         locality: (form.locality || '').trim() || null,
         status_id: Number(form.status_id),
-        title: form.title || productLabel || 'Servicio',
-        description: form.description || null,
-        scheduled_date: form.scheduled_date || today(),
+        request_kind: form.request_kind || null,
+        provider_order_ref: (form.provider_order_ref || '').trim() || null,
+        internal_order_no: (form.internal_order_no || '').trim() || null,
+        ops_notes: (form.ops_notes || '').trim() || null,
+        diagnosis_notes: (form.diagnosis_notes || '').trim() || null,
+        received_at: form.received_at || today(),
+        visit_date: form.visit_date || null,
       },
     });
     onCreated?.();
@@ -653,28 +778,35 @@ function Ordenes({ lookups, onCreated }) {
       <table>
         <thead>
           <tr>
-            <th>Fecha ingreso</th>
+            <th>Fecha</th>
+            <th>Pedido</th>
             <th>Cliente</th>
-            <th>Producto</th>
-            <th>Tipo</th>
-            <th>Origen</th>
+            <th>G/FG</th>
+            <th>Unidad</th>
+            <th>Modelo / falla</th>
+            <th>Visita</th>
+            <th>Técnico</th>
             <th>Estado</th>
-            <th>Localidad</th>
           </tr>
         </thead>
         <tbody>
           {list.map((o) => (
             <tr key={o.id}>
               <td>
-                <strong>{formatLoadDate(o.entry_date || o.created_at)}</strong>
-                <div className="meta">#{o.id}</div>
+                <strong>{formatLoadDate(o.received_at || o.entry_date || o.created_at)}</strong>
+                <div className="meta">#{o.internal_order_no || o.id}</div>
               </td>
+              <td>{o.provider_order_ref || '—'}</td>
               <td>{o.client_name}</td>
-              <td>{o.product_label || o.title || '—'}</td>
-              <td>{o.product_type_name || '—'}</td>
-              <td>{o.provider_name || 'Carga propia'}</td>
+              <td>{o.request_kind || '—'}</td>
+              <td>{o.unit_type_name || '—'}</td>
+              <td>
+                {o.appliance_model || o.product_label || '—'}
+                {o.reported_failure ? <div className="meta">{o.reported_failure}</div> : null}
+              </td>
+              <td>{formatLoadDate(o.visit_date)}</td>
+              <td>{o.technician_code || o.technician_name || '—'}</td>
               <td><span className="badge" style={{ background: o.status_color }}>{o.status_name}</span></td>
-              <td>{o.locality || '—'}</td>
             </tr>
           ))}
         </tbody>
@@ -684,10 +816,10 @@ function Ordenes({ lookups, onCreated }) {
 
   return (
     <section>
-      <h2>Histórico de órdenes</h2>
+      <h2>Histórico de solicitudes</h2>
       <p className="meta">
-        Base histórica de todos los ingresos (vigentes y cumplidos). El mismo cliente puede reingresar;
-        cada visita se diferencia por su <strong>fecha de ingreso</strong>.
+        Base histórica de ingresos (vigentes y cumplidos). El mismo cliente puede reingresar;
+        cada solicitud se diferencia por fecha, pedido de servicio y nº de orden.
       </p>
 
       <div className="history-filters card row" style={{ marginBottom: 16 }}>
@@ -713,18 +845,18 @@ function Ordenes({ lookups, onCreated }) {
             {lookups.providers?.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
         </Field>
-        <Field label="Tipo de producto">
-          <select value={filters.productTypeId || ''} onChange={setFilter('productTypeId')}>
+        <Field label="Tipo de unidad">
+          <select value={filters.unitTypeId || ''} onChange={setFilter('unitTypeId')}>
             <option value="">Todos</option>
-            {lookups.productTypes?.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+            {types.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
           </select>
         </Field>
         <p className="meta" style={{ alignSelf: 'center' }}>{total} registro{total === 1 ? '' : 's'}</p>
       </div>
 
       <form className="card grid" onSubmit={create} style={{ marginBottom: 16 }}>
-        <strong>Nuevo ingreso / reingreso</strong>
-        <p className="meta">Si el cliente ya existía, se crea otra orden con fecha de ingreso de hoy.</p>
+        <strong>Nueva solicitud / reingreso</strong>
+        <p className="meta">Si el cliente ya existía, se crea otra solicitud con la fecha de ingreso indicada.</p>
         <div className="row">
           <Field label="Cliente">
             <select required value={form.client_id} onChange={set('client_id')}>
@@ -732,11 +864,29 @@ function Ordenes({ lookups, onCreated }) {
               {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </Field>
-          <Field label="Producto (texto libre)"><input value={form.product_label} onChange={set('product_label')} placeholder="Ej. Lavarropas Drean 8kg" /></Field>
-          <Field label="Tipo">
-            <select value={form.product_type_id} onChange={set('product_type_id')}>
+          <Field label="Fecha ingreso"><input type="date" value={form.received_at} onChange={set('received_at')} /></Field>
+          <Field label="Pedido de servicio"><input value={form.provider_order_ref} onChange={set('provider_order_ref')} placeholder="PS-00…" /></Field>
+          <Field label="Nº de orden"><input value={form.internal_order_no} onChange={set('internal_order_no')} /></Field>
+          <Field label="G/FG">
+            <select value={form.request_kind} onChange={set('request_kind')}>
               <option value="">—</option>
-              {lookups.productTypes?.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+              <option value="G">G (garantía)</option>
+              <option value="FG">FG (fuera de garantía)</option>
+            </select>
+          </Field>
+          <Field label="Tipo unidad">
+            <select value={form.unit_type_id} onChange={set('unit_type_id')}>
+              <option value="">—</option>
+              {types.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </select>
+          </Field>
+          <Field label="Modelo"><input value={form.appliance_model} onChange={set('appliance_model')} placeholder="Ej. WRM40MK" /></Field>
+          <Field label="Falla reportada"><input value={form.reported_failure} onChange={set('reported_failure')} /></Field>
+          <Field label="Fecha visita"><input type="date" value={form.visit_date} onChange={set('visit_date')} /></Field>
+          <Field label="Técnico">
+            <select value={form.technician_id} onChange={set('technician_id')}>
+              <option value="">Sin asignar</option>
+              {lookups.technicians?.map((t) => <option key={t.id} value={t.id}>{techLabel(t)}</option>)}
             </select>
           </Field>
           <Field label="Origen">
@@ -746,23 +896,19 @@ function Ordenes({ lookups, onCreated }) {
             </select>
           </Field>
           <Field label="Localidad">
-            <input value={form.locality} onChange={set('locality')} placeholder="Ej. CABA" />
+            <input value={form.locality} onChange={set('locality')} placeholder="Ej. LANUS OESTE" />
           </Field>
           <Field label="Estado">
             <select value={form.status_id} onChange={set('status_id')}>
               {lookups.statuses?.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </Field>
-          <Field label="Técnico">
-            <select value={form.technician_id} onChange={set('technician_id')}>
-              <option value="">Sin asignar</option>
-              {lookups.technicians?.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-            </select>
-          </Field>
-          <Field label="Agenda (opcional)"><input type="date" value={form.scheduled_date} onChange={set('scheduled_date')} /></Field>
         </div>
-        <Field label="Detalle"><textarea value={form.description} onChange={set('description')} /></Field>
-        <button className="primary" type="submit">Registrar ingreso</button>
+        <div className="row">
+          <Field label="Notas operativas"><input value={form.ops_notes} onChange={set('ops_notes')} /></Field>
+          <Field label="Diagnóstico / presupuesto"><input value={form.diagnosis_notes} onChange={set('diagnosis_notes')} /></Field>
+        </div>
+        <button className="primary" type="submit">Registrar solicitud</button>
       </form>
 
       {!filters.month && monthKeys.length > 0 && (
@@ -792,7 +938,7 @@ function Ordenes({ lookups, onCreated }) {
       )}
 
       {!rows.length && (
-        <p className="meta">No hay órdenes para este período.</p>
+        <p className="meta">No hay solicitudes para este período.</p>
       )}
     </section>
   );
@@ -805,7 +951,7 @@ function money(n) {
 function Clientes({ lookups, onCreated }) {
   const [rows, setRows] = useState([]);
   const [view, setView] = useState('all');
-  const [form, setForm] = useState({ name: '', phone: '', email: '', provider_id: '', locality: '', external_id: '', address: '', notes: '' });
+  const [form, setForm] = useState({ name: '', phone: '', phone_alt: '', email: '', provider_id: '', locality: '', external_id: '', address: '', notes: '' });
   const [importProvider, setImportProvider] = useState('');
   const [importMsg, setImportMsg] = useState('');
   const [busy, setBusy] = useState(false);
@@ -834,7 +980,7 @@ function Clientes({ lookups, onCreated }) {
         locality: (form.locality || '').trim() || null,
       },
     });
-    setForm({ name: '', phone: '', email: '', provider_id: form.provider_id, locality: '', external_id: '', address: '', notes: '' });
+    setForm({ name: '', phone: '', phone_alt: '', email: '', provider_id: form.provider_id, locality: '', external_id: '', address: '', notes: '' });
     onCreated?.();
     load();
   }
@@ -896,6 +1042,7 @@ function Clientes({ lookups, onCreated }) {
         <div className="row">
           <Field label="Nombre"><input required value={form.name} onChange={set('name')} /></Field>
           <Field label="Teléfono"><input value={form.phone} onChange={set('phone')} /></Field>
+          <Field label="Teléfono alt."><input value={form.phone_alt} onChange={set('phone_alt')} /></Field>
           <Field label="Email"><input value={form.email} onChange={set('email')} /></Field>
           <Field label="Prestador / proveedor">
             <select value={form.provider_id} onChange={set('provider_id')}>
@@ -936,7 +1083,7 @@ function Clientes({ lookups, onCreated }) {
       <table>
         <thead>
           <tr>
-            <th>Cliente</th><th>Prestador / proveedor</th><th>Alta</th><th>ID Salesforce</th><th>Localidad</th><th>Teléfono</th>
+            <th>Cliente</th><th>Prestador / proveedor</th><th>Alta</th><th>ID Salesforce</th><th>Localidad</th><th>Teléfono</th><th>Tel. alt.</th>
           </tr>
         </thead>
         <tbody>
@@ -948,6 +1095,7 @@ function Clientes({ lookups, onCreated }) {
               <td>{c.external_id || '—'}</td>
               <td>{c.locality || '—'}</td>
               <td>{c.phone}</td>
+              <td>{c.phone_alt || '—'}</td>
             </tr>
           ))}
         </tbody>
@@ -1167,7 +1315,7 @@ function Catalogo({ lookups, onCreated }) {
         <Field label="Tipo">
           <select value={form.product_type_id} onChange={set('product_type_id')}>
             <option value="">—</option>
-            {lookups.productTypes?.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+            {unitTypesOf(lookups).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
           </select>
         </Field>
         <Field label="Proveedor">
@@ -1200,7 +1348,7 @@ function Catalogo({ lookups, onCreated }) {
 
 function Tecnicos({ onCreated }) {
   const [rows, setRows] = useState([]);
-  const [form, setForm] = useState({ name: '', phone: '', specialty: '' });
+  const [form, setForm] = useState({ name: '', code: '', phone: '', specialty: '' });
   async function load() { setRows(await api('/api/technicians')); }
   useEffect(() => { load().catch(console.error); }, []);
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
@@ -1215,15 +1363,16 @@ function Tecnicos({ onCreated }) {
       <h2>Técnicos / mecánicos</h2>
       <form className="card row" onSubmit={create} style={{ marginBottom: 16 }}>
         <Field label="Nombre"><input required value={form.name} onChange={set('name')} /></Field>
+        <Field label="Código"><input value={form.code} onChange={set('code')} placeholder="WAL / EST / CLAU" /></Field>
         <Field label="Teléfono"><input value={form.phone} onChange={set('phone')} /></Field>
         <Field label="Especialidad"><input value={form.specialty} onChange={set('specialty')} /></Field>
         <button className="primary" type="submit">Alta</button>
       </form>
       <table>
-        <thead><tr><th>Nombre</th><th>Especialidad</th><th>Teléfono</th></tr></thead>
+        <thead><tr><th>Código</th><th>Nombre</th><th>Especialidad</th><th>Teléfono</th></tr></thead>
         <tbody>
           {rows.map((t) => (
-            <tr key={t.id}><td>{t.name}</td><td>{t.specialty}</td><td>{t.phone}</td></tr>
+            <tr key={t.id}><td>{t.code || '—'}</td><td>{t.name}</td><td>{t.specialty}</td><td>{t.phone}</td></tr>
           ))}
         </tbody>
       </table>

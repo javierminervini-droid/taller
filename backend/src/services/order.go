@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"strconv"
+	"strings"
 	"time"
 
 	"taller-gestion/backend/src/models"
@@ -13,15 +14,17 @@ import (
 type AgendaResult struct {
 	Date        string              `json:"date"`
 	Technicians []models.Technician `json:"technicians"`
-	Orders      []map[string]any    `json:"orders"`
+	Requests    []map[string]any    `json:"requests"`
+	Orders      []map[string]any    `json:"orders"` // alias for older clients
 }
 
 type OrdersListResult struct {
-	Orders []map[string]any `json:"orders"`
-	Years  []string         `json:"years"`
-	Year   any              `json:"year"`
-	Month  any              `json:"month"`
-	Total  int              `json:"total"`
+	Requests []map[string]any `json:"requests"`
+	Orders   []map[string]any `json:"orders"` // alias
+	Years    []string         `json:"years"`
+	Year     any              `json:"year"`
+	Month    any              `json:"month"`
+	Total    int              `json:"total"`
 }
 
 func scopeFilters(q *repositories.OrderFilters, claims *utils.Claims, techID *int64) {
@@ -68,7 +71,7 @@ func (s *Services) Agenda(ctx context.Context, claims *utils.Claims, q repositor
 	} else {
 		technicians, _ = s.Repos.ListActiveTechnicians(ctx)
 	}
-	return &AgendaResult{Date: date, Technicians: technicians, Orders: orders}, nil
+	return &AgendaResult{Date: date, Technicians: technicians, Requests: orders, Orders: orders}, nil
 }
 
 func (s *Services) ListOrders(ctx context.Context, claims *utils.Claims, q repositories.OrderFilters) (*OrdersListResult, error) {
@@ -81,7 +84,7 @@ func (s *Services) ListOrders(ctx context.Context, claims *utils.Claims, q repos
 	scopeFilters(&q, claims, techID)
 	where, params := q.Where()
 
-	orders, err := s.Repos.QueryOrders(ctx, where, params, "ORDER BY o.created_at DESC, o.id DESC")
+	orders, err := s.Repos.QueryOrders(ctx, where, params, "ORDER BY COALESCE(o.received_at, o.created_at::date) DESC, o.id DESC")
 	if err != nil {
 		return nil, err
 	}
@@ -96,11 +99,12 @@ func (s *Services) ListOrders(ctx context.Context, claims *utils.Claims, q repos
 		month = q.Month
 	}
 	return &OrdersListResult{
-		Orders: orders,
-		Years:  years,
-		Year:   year,
-		Month:  month,
-		Total:  len(orders),
+		Requests: orders,
+		Orders:   orders,
+		Years:    years,
+		Year:     year,
+		Month:    month,
+		Total:    len(orders),
 	}, nil
 }
 
@@ -122,31 +126,87 @@ func (s *Services) GetOrder(ctx context.Context, claims *utils.Claims, id int64)
 	return order, nil
 }
 
+func requestTitle(b map[string]any) string {
+	if t := strings.TrimSpace(utils.StrOr(b["title"], "")); t != "" {
+		return t
+	}
+	model := strings.TrimSpace(utils.StrOr(b["appliance_model"], utils.StrOr(b["product_label"], "")))
+	fail := strings.TrimSpace(utils.StrOr(b["reported_failure"], ""))
+	switch {
+	case model != "" && fail != "":
+		return model + " - " + fail
+	case model != "":
+		return model
+	case fail != "":
+		return fail
+	default:
+		return "Servicio"
+	}
+}
+
+func normalizeRequestKind(v any) *string {
+	s := strings.TrimSpace(strings.ToUpper(utils.StrOr(v, "")))
+	if s == "G" || s == "FG" {
+		return &s
+	}
+	return nil
+}
+
 func (s *Services) CreateOrder(ctx context.Context, claims *utils.Claims, b map[string]any) (int64, error) {
 	if !utils.HasRole(claims.Role, "admin", "coordinador") {
 		return 0, ErrForbidden
 	}
 	now := time.Now()
-	title := utils.StrOr(b["title"], utils.StrOr(b["product_label"], "Servicio"))
-	order := &models.ServiceOrder{
-		ClientID:      utils.MustInt64(b["client_id"]),
-		TechnicianID:  utils.OptInt64(b["technician_id"]),
-		ProductTypeID: utils.OptInt64(b["product_type_id"]),
-		ProductID:     utils.OptInt64(b["product_id"]),
-		ProductLabel:  utils.OptStr(b["product_label"]),
-		Locality:      utils.OptStr(b["locality"]),
-		ProviderID:    utils.OptInt64(b["provider_id"]),
-		StatusID:      utils.MustInt64(b["status_id"]),
-		Title:         title,
-		Description:   utils.OptStr(b["description"]),
-		ScheduledDate: utils.OptStr(b["scheduled_date"]),
-		ScheduledTime: utils.OptStr(b["scheduled_time"]),
-		Hours:         utils.FloatOr(b["hours"], 0),
-		Km:            utils.FloatOr(b["km"], 0),
-		PartsCost:     utils.FloatOr(b["parts_cost"], 0),
-		PartsSale:     utils.FloatOr(b["parts_sale"], 0),
-		CreatedAt:     now,
-		UpdatedAt:     now,
+	title := requestTitle(b)
+	receivedAt := utils.OptStr(b["received_at"])
+	if receivedAt == nil {
+		d := now.Format("2006-01-02")
+		receivedAt = &d
+	}
+	unitTypeID := utils.OptInt64(b["unit_type_id"])
+	if unitTypeID == nil {
+		unitTypeID = utils.OptInt64(b["product_type_id"])
+	}
+	visitDate := utils.OptStr(b["visit_date"])
+	if visitDate == nil {
+		visitDate = utils.OptStr(b["scheduled_date"])
+	}
+	applianceModel := utils.OptStr(b["appliance_model"])
+	if applianceModel == nil {
+		applianceModel = utils.OptStr(b["product_label"])
+	}
+	reportedFailure := utils.OptStr(b["reported_failure"])
+	if reportedFailure == nil {
+		reportedFailure = utils.OptStr(b["description"])
+	}
+
+	order := &models.ServiceRequest{
+		ClientID:         utils.MustInt64(b["client_id"]),
+		TechnicianID:     utils.OptInt64(b["technician_id"]),
+		UnitTypeID:       unitTypeID,
+		ProductID:        utils.OptInt64(b["product_id"]),
+		ProductLabel:     applianceModel,
+		Locality:         utils.OptStr(b["locality"]),
+		ProviderID:       utils.OptInt64(b["provider_id"]),
+		StatusID:         utils.MustInt64(b["status_id"]),
+		Title:            title,
+		Description:      reportedFailure,
+		ReceivedAt:       receivedAt,
+		ProviderOrderRef: utils.OptStr(b["provider_order_ref"]),
+		InternalOrderNo:  utils.OptStr(b["internal_order_no"]),
+		RequestKind:      normalizeRequestKind(b["request_kind"]),
+		ApplianceModel:   applianceModel,
+		ReportedFailure:  reportedFailure,
+		VisitDate:        visitDate,
+		ScheduledTime:    utils.OptStr(b["scheduled_time"]),
+		OpsNotes:         utils.OptStr(b["ops_notes"]),
+		DiagnosisNotes:   utils.OptStr(b["diagnosis_notes"]),
+		Hours:            utils.FloatOr(b["hours"], 0),
+		Km:               utils.FloatOr(b["km"], 0),
+		PartsCost:        utils.FloatOr(b["parts_cost"], 0),
+		PartsSale:        utils.FloatOr(b["parts_sale"], 0),
+		CreatedAt:        now,
+		UpdatedAt:        now,
 	}
 	if err := s.Repos.InsertOrder(ctx, order); err != nil {
 		return 0, err
@@ -170,27 +230,57 @@ func (s *Services) PatchOrder(ctx context.Context, claims *utils.Claims, id int6
 		b = map[string]any{}
 	}
 
-	allowed := map[string]any{
-		"client_id":       current.ClientID,
-		"technician_id":   current.TechnicianID,
-		"product_type_id": current.ProductTypeID,
-		"product_id":      current.ProductID,
-		"product_label":   current.ProductLabel,
-		"locality":        current.Locality,
-		"provider_id":     current.ProviderID,
-		"status_id":       current.StatusID,
-		"title":           current.Title,
-		"description":     current.Description,
-		"scheduled_date":  current.ScheduledDate,
-		"scheduled_time":  current.ScheduledTime,
-		"hours":           current.Hours,
-		"km":              current.Km,
-		"parts_cost":      current.PartsCost,
-		"parts_sale":      current.PartsSale,
+	// Accept legacy aliases from older clients.
+	if _, ok := b["unit_type_id"]; !ok {
+		if v, ok := b["product_type_id"]; ok {
+			b["unit_type_id"] = v
+		}
+	}
+	if _, ok := b["visit_date"]; !ok {
+		if v, ok := b["scheduled_date"]; ok {
+			b["visit_date"] = v
+		}
+	}
+	if _, ok := b["appliance_model"]; !ok {
+		if v, ok := b["product_label"]; ok {
+			b["appliance_model"] = v
+		}
 	}
 
+	allowed := map[string]any{
+		"client_id":          current.ClientID,
+		"technician_id":      current.TechnicianID,
+		"unit_type_id":       current.UnitTypeID,
+		"product_id":         current.ProductID,
+		"product_label":      current.ProductLabel,
+		"locality":           current.Locality,
+		"provider_id":        current.ProviderID,
+		"status_id":          current.StatusID,
+		"title":              current.Title,
+		"description":        current.Description,
+		"received_at":        current.ReceivedAt,
+		"provider_order_ref": current.ProviderOrderRef,
+		"internal_order_no":  current.InternalOrderNo,
+		"request_kind":       current.RequestKind,
+		"appliance_model":    current.ApplianceModel,
+		"reported_failure":   current.ReportedFailure,
+		"visit_date":         current.VisitDate,
+		"scheduled_time":     current.ScheduledTime,
+		"ops_notes":          current.OpsNotes,
+		"diagnosis_notes":    current.DiagnosisNotes,
+		"hours":              current.Hours,
+		"km":                 current.Km,
+		"parts_cost":         current.PartsCost,
+		"parts_sale":         current.PartsSale,
+	}
+
+	techKeys := []string{
+		"title", "description", "status_id", "appliance_model", "product_label",
+		"unit_type_id", "scheduled_time", "locality", "reported_failure",
+		"diagnosis_notes", "ops_notes",
+	}
 	if claims.Role == "tecnico" {
-		for _, key := range []string{"title", "description", "status_id", "product_label", "product_type_id", "scheduled_time", "locality"} {
+		for _, key := range techKeys {
 			if v, ok := b[key]; ok {
 				allowed[key] = v
 			}
@@ -200,6 +290,17 @@ func (s *Services) PatchOrder(ctx context.Context, claims *utils.Claims, id int6
 			allowed[k] = v
 		}
 	}
+
+	if v, ok := allowed["request_kind"]; ok {
+		allowed["request_kind"] = normalizeRequestKind(v)
+	}
+	if am := utils.OptStr(allowed["appliance_model"]); am != nil {
+		allowed["product_label"] = am
+	}
+	if rf := utils.OptStr(allowed["reported_failure"]); rf != nil {
+		allowed["description"] = rf
+	}
+	allowed["title"] = requestTitle(allowed)
 
 	startedAt := current.StartedAt
 	completedAt := current.CompletedAt

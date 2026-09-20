@@ -119,11 +119,11 @@ func ForceSeed(ctx context.Context, db *bun.DB) error {
 		TRUNCATE TABLE
 			followups,
 			followup_rules,
-			service_orders,
+			service_requests,
 			whatsapp_templates,
 			tariffs,
 			products,
-			product_types,
+			unit_types,
 			clients,
 			technicians,
 			providers,
@@ -156,12 +156,16 @@ func seed(ctx context.Context, db *bun.DB) error {
 	}
 
 	proveedor := &models.Provider{
-		Name: "Repuestos del Sur", Kind: "proveedor",
-		Contact: strPtr("11 4567-8900"), Notes: strPtr("Base de clientes y stock de recambios"),
+		Name: "Whirlpool", Kind: "prestador",
+		Contact: strPtr("dispatcher"), Notes: strPtr("Canal PS Whirlpool / garantia"),
 	}
 	prestador := &models.Provider{
-		Name: "Garantías Andinas", Kind: "prestador",
-		Contact: strPtr("11 4789-1122"), Notes: strPtr("Órdenes derivadas de garantía"),
+		Name: "Midea", Kind: "prestador",
+		Contact: strPtr("dispatcher"), Notes: strPtr("Canal Midea"),
+	}
+	mostrador := &models.Provider{
+		Name: "Mostrador / propio", Kind: "proveedor",
+		Contact: nil, Notes: strPtr("Ingresos telefónicos y mostrador"),
 	}
 	if _, err := db.NewInsert().Model(proveedor).Exec(ctx); err != nil {
 		return err
@@ -169,37 +173,42 @@ func seed(ctx context.Context, db *bun.DB) error {
 	if _, err := db.NewInsert().Model(prestador).Exec(ctx); err != nil {
 		return err
 	}
+	if _, err := db.NewInsert().Model(mostrador).Exec(ctx); err != nil {
+		return err
+	}
 
-	t1 := &models.Technician{UserID: &diego.ID, Name: "Diego Méndez", Phone: strPtr("11 5555-1001"), Specialty: strPtr("Línea blanca"), Active: true}
-	t2 := &models.Technician{UserID: &sofia.ID, Name: "Sofía Rivas", Phone: strPtr("11 5555-1002"), Specialty: strPtr("Electrónica"), Active: true}
-	t3 := &models.Technician{Name: "Martín Acosta", Phone: strPtr("11 5555-1003"), Specialty: strPtr("Motos y herramientas"), Active: true}
-	for _, t := range []*models.Technician{t1, t2, t3} {
+	t1 := &models.Technician{UserID: &diego.ID, Name: "Esteban", Code: strPtr("EST"), Phone: strPtr("11 5555-1001"), Specialty: strPtr("Línea blanca"), Active: true}
+	t2 := &models.Technician{UserID: &sofia.ID, Name: "Walter", Code: strPtr("WAL"), Phone: strPtr("11 5555-1002"), Specialty: strPtr("Electrónica"), Active: true}
+	t3 := &models.Technician{Name: "Claudia", Code: strPtr("CLAU"), Phone: strPtr("11 5555-1003"), Specialty: strPtr("Heladeras"), Active: true}
+	t4 := &models.Technician{Name: "Taller", Code: strPtr("TALLER"), Phone: nil, Specialty: strPtr("Banco / taller"), Active: true}
+	for _, t := range []*models.Technician{t1, t2, t3, t4} {
 		if _, err := db.NewInsert().Model(t).Exec(ctx); err != nil {
 			return err
 		}
 	}
 
-	types := map[string]*models.ProductType{
-		"lavarropas": {Name: "Lavarropas"},
-		"heladera":   {Name: "Heladera"},
-		"aire":       {Name: "Aire acondicionado"},
-		"moto":       {Name: "Motocicleta"},
-	}
-	for _, pt := range types {
-		if _, err := db.NewInsert().Model(pt).Exec(ctx); err != nil {
+	types := map[string]*models.UnitType{}
+	for _, name := range []string{
+		"HELADERA", "LAVARROPAS", "LAVASECARROPAS", "SECARROPAS", "LAVAVAJILLAS",
+		"MICROONDAS", "ANAFE", "HORNO ELECTRICO", "HORNO GAS", "COCINA",
+		"PURIFICADOR", "FREIDORA POR AIRE",
+	} {
+		ut := &models.UnitType{Name: name}
+		if _, err := db.NewInsert().Model(ut).Exec(ctx); err != nil {
 			return err
 		}
+		types[name] = ut
 	}
 
 	pCorrea := &models.Product{
 		Name: "Correa lavarropas 1270 J5", SKU: strPtr("COR-1270"),
-		ProductTypeID: &types["lavarropas"].ID, ProviderID: &proveedor.ID, Stock: 12, Price: 18500,
+		ProductTypeID: &types["LAVARROPAS"].ID, ProviderID: &proveedor.ID, Stock: 12, Price: 18500,
 	}
 	products := []*models.Product{
 		pCorrea,
-		{Name: "Termostato heladera", SKU: strPtr("TER-HL01"), ProductTypeID: &types["heladera"].ID, ProviderID: &proveedor.ID, Stock: 8, Price: 22100},
-		{Name: "Capacitor 45uF", SKU: strPtr("CAP-45"), ProductTypeID: &types["aire"].ID, ProviderID: &proveedor.ID, Stock: 20, Price: 9800},
-		{Name: "Kit freno delantero", SKU: strPtr("FRN-MOTO"), ProductTypeID: &types["moto"].ID, ProviderID: &prestador.ID, Stock: 4, Price: 45200},
+		{Name: "Termostato heladera", SKU: strPtr("TER-HL01"), ProductTypeID: &types["HELADERA"].ID, ProviderID: &proveedor.ID, Stock: 8, Price: 22100},
+		{Name: "Capacitor 45uF", SKU: strPtr("CAP-45"), ProductTypeID: &types["MICROONDAS"].ID, ProviderID: &proveedor.ID, Stock: 20, Price: 9800},
+		{Name: "Placa electrónica", SKU: strPtr("PCB-01"), ProductTypeID: &types["LAVARROPAS"].ID, ProviderID: &mostrador.ID, Stock: 4, Price: 45200},
 	}
 	for _, p := range products {
 		if _, err := db.NewInsert().Model(p).Exec(ctx); err != nil {
@@ -208,10 +217,10 @@ func seed(ctx context.Context, db *bun.DB) error {
 	}
 
 	clients := []*models.Client{
-		{ProviderID: &proveedor.ID, ExternalID: strPtr("P-1042"), Name: "Ana López", Phone: strPtr("11 6001-2200"), Email: strPtr("ana@correo.com"), Locality: strPtr("CABA"), Address: strPtr("Av. Rivadavia 2100"), Source: "manual"},
-		{ProviderID: &prestador.ID, ExternalID: strPtr("G-331"), Name: "Carlos Pérez", Phone: strPtr("11 6002-1188"), Email: strPtr("carlos@correo.com"), Locality: strPtr("Quilmes"), Address: strPtr("Calle Mitre 450"), Source: "manual"},
-		{ProviderID: &proveedor.ID, ExternalID: strPtr("P-1188"), Name: "María Suárez", Phone: strPtr("11 6003-4400"), Email: strPtr("maria@correo.com"), Locality: strPtr("La Plata"), Address: strPtr("Calle 12 n° 800"), Source: "manual"},
-		{ProviderID: &prestador.ID, ExternalID: strPtr("G-402"), Name: "Jorge Díaz", Phone: strPtr("11 6004-9900"), Email: strPtr("jorge@correo.com"), Locality: strPtr("Morón"), Address: strPtr("Belgrano 90"), Source: "manual"},
+		{Name: "Ana López", Phone: strPtr("11 6001-2200"), PhoneAlt: strPtr("11 6001-2201"), Email: strPtr("ana@correo.com"), Locality: strPtr("LANUS OESTE"), Address: strPtr("Av. Meeks 374"), Source: "manual"},
+		{Name: "Carlos Pérez", Phone: strPtr("11 6002-1188"), Email: strPtr("carlos@correo.com"), Locality: strPtr("MONTE GRANDE"), Address: strPtr("Calle Mitre 450"), Source: "manual"},
+		{Name: "María Suárez", Phone: strPtr("11 6003-4400"), Email: strPtr("maria@correo.com"), Locality: strPtr("TEMPERLEY ESTE"), Address: strPtr("Calle 12 n° 800"), Source: "manual"},
+		{Name: "Jorge Díaz", Phone: strPtr("11 6004-9900"), Email: strPtr("jorge@correo.com"), Locality: strPtr("BURZACO"), Address: strPtr("Belgrano 90"), Source: "manual"},
 	}
 	for _, c := range clients {
 		if _, err := db.NewInsert().Model(c).Exec(ctx); err != nil {
@@ -227,10 +236,15 @@ func seed(ctx context.Context, db *bun.DB) error {
 		"listo":       {Name: "Listo para entregar", SortOrder: 5, Color: "#059669", IsClosed: false},
 		"entregado":   {Name: "Entregado", SortOrder: 6, Color: "#334155", IsClosed: true},
 		"cancelado":   {Name: "Cancelado", SortOrder: 7, Color: "#dc2626", IsClosed: true},
+		"coordinado":  {Name: "Coordinado", SortOrder: 8, Color: "#0ea5e9", IsClosed: false},
+		"taller":      {Name: "En taller", SortOrder: 9, Color: "#a855f7", IsClosed: false},
+		"anulado":     {Name: "Anulado", SortOrder: 10, Color: "#dc2626", IsClosed: true},
+		"cerrado":     {Name: "Cerrado", SortOrder: 11, Color: "#334155", IsClosed: true},
 	}
 	for _, s := range []*models.ServiceStatus{
 		statuses["ingresado"], statuses["diagnostico"], statuses["espera"],
 		statuses["reparacion"], statuses["listo"], statuses["entregado"], statuses["cancelado"],
+		statuses["coordinado"], statuses["taller"], statuses["anulado"], statuses["cerrado"],
 	} {
 		if _, err := db.NewInsert().Model(s).Exec(ctx); err != nil {
 			return err
@@ -266,58 +280,76 @@ func seed(ctx context.Context, db *bun.DB) error {
 	pastMonthDay := pastMonth.Format("2006-01-02")
 	completedPast := pastMonth.Add(6 * time.Hour)
 
-	orders := []*models.ServiceOrder{
+	orders := []*models.ServiceRequest{
 		{
-			ClientID: clients[0].ID, TechnicianID: &t1.ID, ProductTypeID: &types["lavarropas"].ID, ProductID: &pCorrea.ID,
-			ProductLabel: strPtr("Lavarropas Drean 8kg"), Locality: strPtr("CABA"), ProviderID: &proveedor.ID,
-			StatusID: statuses["espera"].ID, Title: "Cambio de correa",
-			Description: strPtr("No centrifuga. Cliente de Repuestos del Sur."),
-			ScheduledDate: strPtr(iso(0)), ScheduledTime: strPtr("09:00"),
+			ClientID: clients[0].ID, TechnicianID: &t1.ID, UnitTypeID: &types["LAVARROPAS"].ID, ProductID: &pCorrea.ID,
+			ProductLabel: strPtr("WW10HTBZWA"), ApplianceModel: strPtr("WW10HTBZWA Lavadora Whirlpool 10kg"),
+			ReportedFailure: strPtr("Ruidos al lavar"), Locality: strPtr("LANUS OESTE"), ProviderID: &proveedor.ID,
+			StatusID: statuses["espera"].ID, Title: "WW10HTBZWA - Ruidos al lavar",
+			Description: strPtr("Ruidos al lavar"),
+			ReceivedAt: strPtr(iso(0)), ProviderOrderRef: strPtr("PS-00250465"), InternalOrderNo: strPtr("57654"),
+			RequestKind: strPtr("G"), VisitDate: strPtr(iso(0)), ScheduledTime: strPtr("09:00"),
+			OpsNotes: strPtr("WHIRLPOOL COORDINO VISITA"), DiagnosisNotes: strPtr("func normal, sonidos caracteristicos"),
 			Hours: 1.5, Km: 12, PartsCost: 12000, PartsSale: 18500,
 			StartedAt: &twoDaysAgoTrunc, CreatedAt: twoDaysAgoTrunc, UpdatedAt: time.Now(),
 		},
 		{
-			ClientID: clients[1].ID, TechnicianID: &t2.ID, ProductTypeID: &types["heladera"].ID,
-			ProductLabel: strPtr("Heladera Patrick 300L"), Locality: strPtr("Quilmes"), ProviderID: &prestador.ID,
+			ClientID: clients[1].ID, TechnicianID: &t2.ID, UnitTypeID: &types["HELADERA"].ID,
+			ProductLabel: strPtr("WRM39ERDIM"), ApplianceModel: strPtr("WRM39X1 Hel No Frost 354l"),
+			ReportedFailure: strPtr("No enfría refrigerador y freezer"), Locality: strPtr("MONTE GRANDE"), ProviderID: &proveedor.ID,
 			StatusID: statuses["diagnostico"].ID, Title: "Heladera no enfría",
-			Description: strPtr("Orden de garantía G-331."),
-			ScheduledDate: strPtr(iso(0)), ScheduledTime: strPtr("11:30"),
+			Description: strPtr("No enfría refrigerador y freezer"),
+			ReceivedAt: strPtr(iso(0)), ProviderOrderRef: strPtr("PS-00250566"), RequestKind: strPtr("G"),
+			VisitDate: strPtr(iso(0)), ScheduledTime: strPtr("11:30"),
+			OpsNotes: strPtr("WHIRLPOOL COORDINO VISITA"),
 			Hours: 1, Km: 28,
 			StartedAt: &twoDaysAgoTrunc, CreatedAt: twoDaysAgoTrunc, UpdatedAt: time.Now(),
 		},
 		{
-			ClientID: clients[2].ID, TechnicianID: &t1.ID, ProductTypeID: &types["aire"].ID,
-			ProductLabel: strPtr("Split BGH 3000"), Locality: strPtr("La Plata"), ProviderID: &proveedor.ID,
-			StatusID: statuses["listo"].ID, Title: "Carga de gas y limpieza",
-			Description: strPtr("Unidad lista. Coordinar entrega."),
-			ScheduledDate: strPtr(iso(0)), ScheduledTime: strPtr("15:00"),
+			ClientID: clients[2].ID, TechnicianID: &t1.ID, UnitTypeID: &types["MICROONDAS"].ID,
+			ProductLabel: strPtr("WMS20AZWDS"), ApplianceModel: strPtr("WMS20SW Microondas 20Lts"),
+			ReportedFailure: strPtr("No calienta"), Locality: strPtr("TEMPERLEY ESTE"), ProviderID: &proveedor.ID,
+			StatusID: statuses["listo"].ID, Title: "Microondas no calienta",
+			Description: strPtr("No calienta"),
+			ReceivedAt: strPtr(iso(-2)), ProviderOrderRef: strPtr("PS-00250728"), InternalOrderNo: strPtr("57655"),
+			RequestKind: strPtr("G"), VisitDate: strPtr(iso(0)), ScheduledTime: strPtr("15:00"),
+			OpsNotes: strPtr("WHIRLPOOL COORDINO VISITA"), DiagnosisNotes: strPtr("baja tensión"),
 			Hours: 2, Km: 45, PartsCost: 5000, PartsSale: 9800,
 			StartedAt: timePtr(parseTS(iso(-1) + " 10:00:00")), CreatedAt: parseTS(iso(-2) + " 09:00:00"), UpdatedAt: time.Now(),
 		},
 		{
-			ClientID: clients[3].ID, TechnicianID: &t3.ID, ProductTypeID: &types["moto"].ID,
-			ProductLabel: strPtr("Motomel Skua 150"), Locality: strPtr("Morón"), ProviderID: &prestador.ID,
-			StatusID: statuses["ingresado"].ID, Title: "Frenos delanteros",
-			Description: strPtr("Prestador derivó inspección."),
-			ScheduledDate: strPtr(iso(1)), ScheduledTime: strPtr("10:00"),
+			ClientID: clients[3].ID, TechnicianID: &t3.ID, UnitTypeID: &types["HELADERA"].ID,
+			ProductLabel: strPtr("HEL WHIRLPOOL"), ApplianceModel: strPtr("HEL WHIRLPOOL"),
+			ReportedFailure: strPtr("Se bloquea"), Locality: strPtr("BURZACO"), ProviderID: &mostrador.ID,
+			StatusID: statuses["ingresado"].ID, Title: "Heladera se bloquea",
+			Description: strPtr("Se bloquea"),
+			ReceivedAt: strPtr(iso(0)), InternalOrderNo: strPtr("57658"), RequestKind: strPtr("FG"),
+			VisitDate: strPtr(iso(1)), ScheduledTime: strPtr("10:00"),
+			OpsNotes: strPtr("retirar"),
 			CreatedAt: parseTS(iso(0) + " 08:00:00"), UpdatedAt: time.Now(),
 		},
 		{
-			ClientID: clients[0].ID, TechnicianID: &t2.ID, ProductTypeID: &types["heladera"].ID,
-			ProductLabel: strPtr("Freezer horizontal"), Locality: strPtr("CABA"), ProviderID: &proveedor.ID,
+			ClientID: clients[0].ID, TechnicianID: &t2.ID, UnitTypeID: &types["HELADERA"].ID,
+			ProductLabel: strPtr("WRO85BK"), ApplianceModel: strPtr("WRO85BK Heladera Whirlpool 554L"),
+			ReportedFailure: strPtr("No enfría refrigerador"), Locality: strPtr("LANUS OESTE"), ProviderID: &proveedor.ID,
 			StatusID: statuses["entregado"].ID, Title: "Cambio de termostato",
-			Description: strPtr("Orden histórica para probar el listado anual."),
-			ScheduledDate: strPtr(pastMonthDay), ScheduledTime: strPtr("14:00"),
+			Description: strPtr("No enfría refrigerador"),
+			ReceivedAt: strPtr(pastMonthDay), ProviderOrderRef: strPtr("PS-00238491"), InternalOrderNo: strPtr("57222"),
+			RequestKind: strPtr("G"), VisitDate: strPtr(pastMonthDay), ScheduledTime: strPtr("14:00"),
+			OpsNotes: strPtr("80+ flete"), DiagnosisNotes: strPtr("placa"),
 			Hours: 1.5, Km: 8, PartsCost: 15000, PartsSale: 22100,
 			StartedAt: &pastMonth, CompletedAt: &completedPast,
 			CreatedAt: pastMonth.Add(-24 * time.Hour), UpdatedAt: completedPast,
 		},
 		{
-			ClientID: clients[2].ID, TechnicianID: &t1.ID, ProductTypeID: &types["lavarropas"].ID,
-			ProductLabel: strPtr("Lavarropas Samsung"), Locality: strPtr("La Plata"), ProviderID: &prestador.ID,
-			StatusID: statuses["cancelado"].ID, Title: "Ruido en centrifugado",
-			Description: strPtr("Cliente canceló visita."),
-			ScheduledDate: strPtr(iso(-7)), ScheduledTime: strPtr("16:00"),
+			ClientID: clients[2].ID, TechnicianID: &t4.ID, UnitTypeID: &types["LAVARROPAS"].ID,
+			ProductLabel: strPtr("WNQ80AS"), ApplianceModel: strPtr("WNQ80AS Lavarropas Whirlpool 8Kg"),
+			ReportedFailure: strPtr("No sigue los programas"), Locality: strPtr("TEMPERLEY ESTE"), ProviderID: &prestador.ID,
+			StatusID: statuses["anulado"].ID, Title: "Lavarropas anulado",
+			Description: strPtr("No sigue los programas"),
+			ReceivedAt: strPtr(iso(-7)), ProviderOrderRef: strPtr("PS-00250829"), RequestKind: strPtr("G"),
+			VisitDate: strPtr(iso(-7)), ScheduledTime: strPtr("16:00"),
+			OpsNotes: strPtr("mal asignado"),
 			CreatedAt: parseTS(iso(-10) + " 11:00:00"), UpdatedAt: parseTS(iso(-7) + " 09:00:00"),
 		},
 	}
@@ -379,6 +411,10 @@ func seed(ctx context.Context, db *bun.DB) error {
 		{
 			Name: "Costo técnico motos", Scope: "tecnico", TechnicianID: &t3.ID,
 			CostFixed: 7000, CostPerHour: 2200, CostPerKm: 80, CostPartsPct: 100, Active: true,
+		},
+		{
+			Name: "Costo banco taller", Scope: "tecnico", TechnicianID: &t4.ID,
+			CostFixed: 5000, CostPerHour: 2000, CostPerKm: 0, CostPartsPct: 100, Active: true,
 		},
 	}
 	for _, t := range tariffs {

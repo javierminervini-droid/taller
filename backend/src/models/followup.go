@@ -10,7 +10,7 @@ type Followup struct {
 	bun.BaseModel `bun:"table:followups"`
 
 	ID             int64      `bun:"id,pk,autoincrement" json:"id"`
-	ServiceOrderID int64      `bun:"service_order_id,notnull" json:"service_order_id"`
+	ServiceRequestID int64      `bun:"service_request_id,notnull" json:"service_request_id"`
 	RuleID         *int64     `bun:"rule_id" json:"rule_id"`
 	AssignedUserID *int64     `bun:"assigned_user_id" json:"assigned_user_id"`
 	DueAt          *time.Time `bun:"due_at" json:"due_at"`

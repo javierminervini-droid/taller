@@ -43,14 +43,15 @@ func (r *Repos) ListOrdersForResults(ctx context.Context, from, to string) ([]ma
 	rows, err := r.DB.QueryContext(ctx, `
 		SELECT o.*, c.name AS client_name, t.name AS technician_name,
 		       pr.name AS provider_name, pr.kind AS provider_kind,
-		       to_char(o.scheduled_date, 'YYYY-MM-DD') AS scheduled_date
-		FROM service_orders o
+		       to_char(o.visit_date, 'YYYY-MM-DD') AS scheduled_date,
+		       to_char(o.visit_date, 'YYYY-MM-DD') AS visit_date
+		FROM service_requests o
 		JOIN clients c ON c.id = o.client_id
 		LEFT JOIN technicians t ON t.id = o.technician_id
 		LEFT JOIN providers pr ON pr.id = o.provider_id
-		WHERE (? IS NULL OR o.scheduled_date >= ?::date)
-		  AND (? IS NULL OR o.scheduled_date <= ?::date)
-		ORDER BY o.scheduled_date, o.id`, fromArg, fromArg, toArg, toArg)
+		WHERE (? IS NULL OR o.visit_date >= ?::date)
+		  AND (? IS NULL OR o.visit_date <= ?::date)
+		ORDER BY o.visit_date, o.id`, fromArg, fromArg, toArg, toArg)
 	if err != nil {
 		return nil, err
 	}

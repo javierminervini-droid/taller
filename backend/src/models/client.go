@@ -14,6 +14,7 @@ type Client struct {
 	ExternalID *string   `bun:"external_id" json:"external_id"`
 	Name       string    `bun:"name,notnull" json:"name"`
 	Phone      *string   `bun:"phone" json:"phone"`
+	PhoneAlt   *string   `bun:"phone_alt" json:"phone_alt"`
 	Email      *string   `bun:"email" json:"email"`
 	Locality   *string   `bun:"locality" json:"locality"`
 	Address    *string   `bun:"address" json:"address"`

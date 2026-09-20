@@ -11,7 +11,7 @@ func (r *Repos) ListClientsForTechnician(ctx context.Context, techID int64) ([]m
 	rows, err := r.DB.QueryContext(ctx, `
 		SELECT DISTINCT c.*, p.name AS provider_name, p.kind AS provider_kind
 		FROM clients c
-		JOIN service_orders o ON o.client_id = c.id
+		JOIN service_requests o ON o.client_id = c.id
 		LEFT JOIN providers p ON p.id = c.provider_id
 		WHERE o.technician_id = ?
 		ORDER BY c.name`, techID)
@@ -66,12 +66,13 @@ func (r *Repos) InsertClient(ctx context.Context, client *models.Client) error {
 	return err
 }
 
-func (r *Repos) UpdateClient(ctx context.Context, id int64, providerID *int64, externalID *string, name string, phone, email, locality *string, address, notes *string) error {
+func (r *Repos) UpdateClient(ctx context.Context, id int64, providerID *int64, externalID *string, name string, phone, phoneAlt, email, locality *string, address, notes *string) error {
 	_, err := r.DB.NewUpdate().Model((*models.Client)(nil)).
 		Set("provider_id = ?", providerID).
 		Set("external_id = ?", externalID).
 		Set("name = ?", name).
 		Set("phone = ?", phone).
+		Set("phone_alt = ?", phoneAlt).
 		Set("email = ?", email).
 		Set("locality = ?", locality).
 		Set("address = ?", address).

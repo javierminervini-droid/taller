@@ -28,6 +28,7 @@ func (s *Services) CreateClient(ctx context.Context, claims *utils.Claims, b map
 		ExternalID: utils.OptStr(b["external_id"]),
 		Name:       utils.StrOr(b["name"], ""),
 		Phone:      utils.OptStr(b["phone"]),
+		PhoneAlt:   utils.OptStr(b["phone_alt"]),
 		Email:      utils.OptStr(b["email"]),
 		Locality:   utils.OptStr(b["locality"]),
 		Address:    utils.OptStr(b["address"]),
@@ -67,6 +68,10 @@ func (s *Services) PatchClient(ctx context.Context, claims *utils.Claims, id int
 	if v, ok := b["phone"]; ok {
 		phone = utils.OptStr(v)
 	}
+	phoneAlt := current.PhoneAlt
+	if v, ok := b["phone_alt"]; ok {
+		phoneAlt = utils.OptStr(v)
+	}
 	email := current.Email
 	if v, ok := b["email"]; ok {
 		email = utils.OptStr(v)
@@ -83,5 +88,5 @@ func (s *Services) PatchClient(ctx context.Context, claims *utils.Claims, id int
 	if v, ok := b["notes"]; ok {
 		notes = utils.OptStr(v)
 	}
-	return s.Repos.UpdateClient(ctx, id, providerID, externalID, name, phone, email, locality, address, notes)
+	return s.Repos.UpdateClient(ctx, id, providerID, externalID, name, phone, phoneAlt, email, locality, address, notes)
 }

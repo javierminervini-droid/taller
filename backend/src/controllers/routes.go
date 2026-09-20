@@ -17,6 +17,12 @@ func Register(r *gin.Engine, deps *Deps) {
 		apiGroup.GET("/lookups", deps.Lookups)
 
 		apiGroup.GET("/agenda", deps.Agenda)
+		apiGroup.GET("/service-requests", deps.ListOrders)
+		apiGroup.POST("/service-requests", deps.CreateOrder)
+		apiGroup.GET("/service-requests/:id/whatsapp", deps.OrderWhatsApp)
+		apiGroup.GET("/service-requests/:id", deps.GetOrder)
+		apiGroup.PATCH("/service-requests/:id", deps.PatchOrder)
+		// Legacy aliases
 		apiGroup.GET("/orders", deps.ListOrders)
 		apiGroup.POST("/orders", deps.CreateOrder)
 		apiGroup.GET("/orders/:id/whatsapp", deps.OrderWhatsApp)
@@ -35,6 +41,8 @@ func Register(r *gin.Engine, deps *Deps) {
 		apiGroup.POST("/technicians", deps.CreateTechnician)
 		apiGroup.GET("/products", deps.ListProducts)
 		apiGroup.POST("/products", deps.CreateProduct)
+		apiGroup.POST("/unit-types", deps.CreateUnitType)
+		apiGroup.PATCH("/unit-types/:id", deps.PatchUnitType)
 		apiGroup.POST("/product-types", deps.CreateProductType)
 		apiGroup.PATCH("/product-types/:id", deps.PatchProductType)
 

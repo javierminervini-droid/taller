@@ -73,28 +73,31 @@ async function main() {
 
   {
     const { res, data } = await req('/api/lookups', { token: adminToken });
-    if (res.ok && data.statuses?.length && data.productTypes?.length) ok('Lookups admin', `${data.statuses.length} estados`);
-    else fail('Lookups admin');
+    if (res.ok && data.statuses?.length && (data.unitTypes?.length || data.productTypes?.length)) {
+      ok('Lookups admin', `${data.statuses.length} estados`);
+    } else fail('Lookups admin');
   }
 
   let orderId;
   {
     const { res, data } = await req('/api/agenda', { token: adminToken });
-    if (res.ok && Array.isArray(data.orders) && data.orders.length > 0) {
-      orderId = data.orders[0].id;
-      const cols = data.orders[0];
-      const hasLoad = cols.load_date || cols.client_created_at;
-      if (hasLoad) ok('Agenda admin con órdenes y fecha carga', `${data.orders.length} filas, date=${data.date}`);
-      else fail('Agenda falta load_date');
-    } else fail('Agenda admin', `orders=${data.orders?.length}`);
+    const rows = data.requests || data.orders || [];
+    if (res.ok && Array.isArray(rows) && rows.length > 0) {
+      orderId = rows[0].id;
+      const cols = rows[0];
+      const hasLoad = cols.load_date || cols.received_at || cols.client_created_at;
+      if (hasLoad) ok('Agenda admin con solicitudes', `${rows.length} filas, date=${data.date}`);
+      else fail('Agenda falta load_date/received_at');
+    } else fail('Agenda admin', `requests=${rows.length}`);
   }
 
   {
     const { res, data } = await req('/api/agenda', { token: techToken });
+    const rows = data.requests || data.orders || [];
     if (res.ok && data.technicians?.length === 1) {
-      const foreign = data.orders.some((o) => o.technician_id !== data.technicians[0].id);
-      if (!foreign) ok('Agenda técnico solo sus órdenes', `${data.orders.length} filas`);
-      else fail('Agenda técnico ve órdenes ajenas');
+      const foreign = rows.some((o) => o.technician_id !== data.technicians[0].id);
+      if (!foreign) ok('Agenda técnico solo sus solicitudes', `${rows.length} filas`);
+      else fail('Agenda técnico ve solicitudes ajenas');
     } else fail('Agenda técnico');
   }
 
@@ -118,20 +121,20 @@ async function main() {
 
   {
     const y = new Date().getFullYear();
-    const { res, data } = await req(`/api/orders?year=${y}`, { token: adminToken });
-    if (res.ok && Array.isArray(data.orders) && Array.isArray(data.years)) {
-      ok('Histórico órdenes por año', `${data.total} en ${y}`);
-    } else fail('Histórico órdenes', JSON.stringify(data).slice(0, 120));
+    const { res, data } = await req(`/api/service-requests?year=${y}`, { token: adminToken });
+    if (res.ok && Array.isArray(data.requests || data.orders) && Array.isArray(data.years)) {
+      ok('Histórico solicitudes por año', `${data.total} en ${y}`);
+    } else fail('Histórico solicitudes', JSON.stringify(data).slice(0, 120));
   }
 
   if (orderId) {
-    const { res, data } = await req(`/api/orders/${orderId}`, {
+    const { res, data } = await req(`/api/service-requests/${orderId}`, {
       method: 'PATCH',
       token: adminToken,
-      body: { product_label: 'Lavarropas QA Demo' },
+      body: { appliance_model: 'Lavarropas QA Demo' },
     });
-    if (res.ok && data.ok) ok('PATCH producto libre');
-    else fail('PATCH producto', JSON.stringify(data));
+    if (res.ok && data.ok) ok('PATCH modelo libre');
+    else fail('PATCH modelo', JSON.stringify(data));
   }
 
   {
