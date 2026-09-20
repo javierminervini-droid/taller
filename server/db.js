@@ -45,14 +45,6 @@ export function seedIfEmpty() {
     'tecnico'
   );
 
-  const loc = db.prepare('INSERT INTO localities (name, province) VALUES (?, ?)');
-  const locIds = {
-    caba: insert(loc, 'CABA', 'Buenos Aires'),
-    quilmes: insert(loc, 'Quilmes', 'Buenos Aires'),
-    laPlata: insert(loc, 'La Plata', 'Buenos Aires'),
-    moron: insert(loc, 'Morón', 'Buenos Aires'),
-  };
-
   const prov = db.prepare(
     'INSERT INTO providers (name, kind, contact, notes) VALUES (?, ?, ?, ?)'
   );
@@ -95,13 +87,13 @@ export function seedIfEmpty() {
   prod.run('Kit freno delantero', 'FRN-MOTO', types.moto, prestadorId, 4, 45200);
 
   const client = db.prepare(
-    `INSERT INTO clients (provider_id, external_id, name, phone, email, locality_id, address)
+    `INSERT INTO clients (provider_id, external_id, name, phone, email, locality, address)
      VALUES (?, ?, ?, ?, ?, ?, ?)`
   );
-  const c1 = insert(client, proveedorId, 'P-1042', 'Ana López', '11 6001-2200', 'ana@correo.com', locIds.caba, 'Av. Rivadavia 2100');
-  const c2 = insert(client, prestadorId, 'G-331', 'Carlos Pérez', '11 6002-1188', 'carlos@correo.com', locIds.quilmes, 'Calle Mitre 450');
-  const c3 = insert(client, proveedorId, 'P-1188', 'María Suárez', '11 6003-4400', 'maria@correo.com', locIds.laPlata, 'Calle 12 n° 800');
-  const c4 = insert(client, prestadorId, 'G-402', 'Jorge Díaz', '11 6004-9900', 'jorge@correo.com', locIds.moron, 'Belgrano 90');
+  const c1 = insert(client, proveedorId, 'P-1042', 'Ana López', '11 6001-2200', 'ana@correo.com', 'CABA', 'Av. Rivadavia 2100');
+  const c2 = insert(client, prestadorId, 'G-331', 'Carlos Pérez', '11 6002-1188', 'carlos@correo.com', 'Quilmes', 'Calle Mitre 450');
+  const c3 = insert(client, proveedorId, 'P-1188', 'María Suárez', '11 6003-4400', 'maria@correo.com', 'La Plata', 'Calle 12 n° 800');
+  const c4 = insert(client, prestadorId, 'G-402', 'Jorge Díaz', '11 6004-9900', 'jorge@correo.com', 'Morón', 'Belgrano 90');
 
   const st = db.prepare('INSERT INTO service_statuses (name, sort_order, color, is_closed) VALUES (?, ?, ?, ?)');
   const statuses = {
@@ -134,7 +126,7 @@ export function seedIfEmpty() {
 
   const order = db.prepare(
     `INSERT INTO service_orders
-      (client_id, technician_id, product_type_id, product_id, locality_id, provider_id,
+      (client_id, technician_id, product_type_id, product_id, locality, provider_id,
        status_id, title, description, scheduled_date, scheduled_time, started_at, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`
   );
@@ -142,22 +134,22 @@ export function seedIfEmpty() {
   const twoDaysAgo = new Date(Date.now() - 50 * 3600 * 1000).toISOString().replace('T', ' ').slice(0, 19);
 
   order.run(
-    c1, t1, types.lavarropas, pCorrea, locIds.caba, proveedorId, statuses.espera,
+    c1, t1, types.lavarropas, pCorrea, 'CABA', proveedorId, statuses.espera,
     'Cambio de correa', 'No centrifuga. Cliente de Repuestos del Sur.',
     iso(0), '09:00', twoDaysAgo, twoDaysAgo
   );
   order.run(
-    c2, t2, types.heladera, null, locIds.quilmes, prestadorId, statuses.diagnostico,
+    c2, t2, types.heladera, null, 'Quilmes', prestadorId, statuses.diagnostico,
     'Heladera no enfría', 'Orden de garantía G-331.',
     iso(0), '11:30', twoDaysAgo, twoDaysAgo
   );
   order.run(
-    c3, t1, types.aire, null, locIds.laPlata, proveedorId, statuses.listo,
+    c3, t1, types.aire, null, 'La Plata', proveedorId, statuses.listo,
     'Carga de gas y limpieza', 'Unidad lista. Coordinar entrega.',
     iso(0), '15:00', iso(-1) + ' 10:00:00', iso(-2) + ' 09:00:00'
   );
   order.run(
-    c4, t3, types.moto, null, locIds.moron, prestadorId, statuses.ingresado,
+    c4, t3, types.moto, null, 'Morón', prestadorId, statuses.ingresado,
     'Frenos delanteros', 'Prestador derivó inspección.',
     iso(1), '10:00', null, iso(0) + ' 08:00:00'
   );

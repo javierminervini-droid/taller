@@ -41,7 +41,7 @@ export function orderVars(order) {
     fecha: order.scheduled_date || '',
     hora: order.scheduled_time || '',
     tecnico: order.technician_name || '',
-    direccion: [order.client_address, order.locality_name].filter(Boolean).join(', '),
+    direccion: [order.client_address, order.locality].filter(Boolean).join(', '),
     telefono: order.client_phone || '',
     orden: String(order.id || ''),
   };

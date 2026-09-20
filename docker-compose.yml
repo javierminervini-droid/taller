@@ -1,0 +1,39 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: taller-gestion-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-taller}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-taller}
+      POSTGRES_DB: ${POSTGRES_DB:-taller_gestion}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-taller} -d ${POSTGRES_DB:-taller_gestion}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: taller-gestion-api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-taller}:${POSTGRES_PASSWORD:-taller}@db:5432/${POSTGRES_DB:-taller_gestion}?sslmode=disable
+      JWT_SECRET: ${JWT_SECRET:-taller-gestion-local-dev}
+      PORT: "3847"
+      CORS_ORIGIN: ${CORS_ORIGIN:-*}
+      RUN_SEED: ${RUN_SEED:-true}
+    ports:
+      - "${API_PORT:-3847}:3847"
+
+volumes:
+  pgdata:

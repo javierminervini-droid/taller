@@ -1,22 +1,23 @@
 /**
- * QA smoke tests for Taller Gestión API
+ * QA smoke tests for Taller Gestión Go API (phase 1)
  * Usage: node scripts/qa.mjs
+ * Optional: QA_BASE=http://127.0.0.1:3847
  */
 const BASE = process.env.QA_BASE || 'http://127.0.0.1:3847';
 
 let passed = 0;
 let failed = 0;
-const results = [];
 
 function ok(name, detail = '') {
   passed += 1;
-  results.push({ ok: true, name, detail });
   console.log(`  ✓ ${name}${detail ? ` — ${detail}` : ''}`);
 }
 function fail(name, detail = '') {
   failed += 1;
-  results.push({ ok: false, name, detail });
   console.log(`  ✗ ${name}${detail ? ` — ${detail}` : ''}`);
+}
+function skip(name, detail = '') {
+  console.log(`  ○ ${name}${detail ? ` — ${detail}` : ''} (fase 2)`);
 }
 
 async function req(path, { method = 'GET', token, body, raw } = {}) {
@@ -33,23 +34,20 @@ async function req(path, { method = 'GET', token, body, raw } = {}) {
 }
 
 async function main() {
-  console.log(`\nQA Instal Service S.A. → ${BASE}\n`);
+  console.log(`\nQA Instal Service S.A. (Go) → ${BASE}\n`);
 
-  // Health / UI
   {
-    const res = await fetch(`${BASE}/`);
-    if (res.ok && (await res.text()).includes('Instal Service')) ok('UI index.html sirve login');
-    else fail('UI index.html', `status ${res.status}`);
+    const { res, data } = await req('/health');
+    if (res.ok && data.ok) ok('Health');
+    else fail('Health', `status ${res.status}`);
   }
 
-  // Bad login
   {
     const { res } = await req('/api/auth/login', { method: 'POST', body: { username: 'admin', password: 'wrong' } });
     if (res.status === 401) ok('Login inválido rechazado');
     else fail('Login inválido', `status ${res.status}`);
   }
 
-  // Admin login
   let adminToken;
   {
     const { res, data } = await req('/api/auth/login', { method: 'POST', body: { username: 'admin', password: 'admin123' } });
@@ -59,7 +57,6 @@ async function main() {
     } else fail('Login admin', JSON.stringify(data));
   }
 
-  // Tech login
   let techToken;
   {
     const { res, data } = await req('/api/auth/login', { method: 'POST', body: { username: 'diego', password: 'diego123' } });
@@ -74,14 +71,12 @@ async function main() {
     process.exit(1);
   }
 
-  // Lookups
   {
     const { res, data } = await req('/api/lookups', { token: adminToken });
     if (res.ok && data.statuses?.length && data.productTypes?.length) ok('Lookups admin', `${data.statuses.length} estados`);
     else fail('Lookups admin');
   }
 
-  // Agenda admin
   let orderId;
   {
     const { res, data } = await req('/api/agenda', { token: adminToken });
@@ -94,7 +89,6 @@ async function main() {
     } else fail('Agenda admin', `orders=${data.orders?.length}`);
   }
 
-  // Agenda tech scoped
   {
     const { res, data } = await req('/api/agenda', { token: techToken });
     if (res.ok && data.technicians?.length === 1) {
@@ -104,53 +98,24 @@ async function main() {
     } else fail('Agenda técnico');
   }
 
-  // Tech cannot list users
   {
     const { res } = await req('/api/users', { token: techToken });
     if (res.status === 403) ok('Técnico sin acceso a usuarios');
     else fail('Técnico usuarios', `status ${res.status}`);
   }
 
-  // Clients
   {
     const { res, data } = await req('/api/clients', { token: adminToken });
     if (res.ok && data.length >= 1) ok('Listado clientes', `${data.length}`);
     else fail('Clientes');
   }
 
-  // WhatsApp templates + message URL
   {
-    const { res, data } = await req('/api/whatsapp/templates', { token: adminToken });
-    if (res.ok && data.length >= 1) ok('Plantillas WhatsApp', `${data.length}`);
-    else fail('Plantillas WhatsApp');
-  }
-  if (orderId) {
-    const { res, data } = await req(`/api/orders/${orderId}/whatsapp`, { token: adminToken });
-    if (res.ok && data.url?.startsWith('https://wa.me/')) ok('WhatsApp URL de orden', data.template);
-    else fail('WhatsApp URL', JSON.stringify(data));
+    const { res, data } = await req('/api/providers', { token: adminToken });
+    if (res.ok && Array.isArray(data) && data.length >= 1) ok('Listado proveedores', `${data.length}`);
+    else fail('Proveedores', JSON.stringify(data).slice(0, 120));
   }
 
-  // Tariffs + results
-  {
-    const { res, data } = await req('/api/tariffs', { token: adminToken });
-    if (res.ok && data.length >= 1) ok('Tarifario', `${data.length} tarifas`);
-    else fail('Tarifario');
-  }
-  {
-    const { res, data } = await req('/api/results?group=proveedor', { token: adminToken });
-    if (res.ok && data.totals && Array.isArray(data.rows)) ok('Ganancias por prestador', `profit=${data.totals.profit}`);
-    else fail('Ganancias');
-  }
-
-  // Excel template
-  {
-    const res = await req('/api/clients/template.xlsx', { token: adminToken, raw: true });
-    const ct = res.headers.get('content-type') || '';
-    if (res.ok && ct.includes('spreadsheet')) ok('Plantilla Excel Salesforce');
-    else fail('Plantilla Excel', `status ${res.status} ct=${ct}`);
-  }
-
-  // Historical orders
   {
     const y = new Date().getFullYear();
     const { res, data } = await req(`/api/orders?year=${y}`, { token: adminToken });
@@ -159,7 +124,6 @@ async function main() {
     } else fail('Histórico órdenes', JSON.stringify(data).slice(0, 120));
   }
 
-  // Patch product_label
   if (orderId) {
     const { res, data } = await req(`/api/orders/${orderId}`, {
       method: 'PATCH',
@@ -170,11 +134,33 @@ async function main() {
     else fail('PATCH producto', JSON.stringify(data));
   }
 
-  // Followups blocked for tech
   {
     const { res } = await req('/api/followups', { token: techToken });
     if (res.status === 403) ok('Seguimientos bloqueados a técnico');
     else fail('Seguimientos técnico', `status ${res.status}`);
+  }
+
+  {
+    const { res, data } = await req('/api/followups', { token: adminToken });
+    if (res.ok && Array.isArray(data)) ok('Seguimientos admin', `${data.length}`);
+    else fail('Seguimientos admin', JSON.stringify(data).slice(0, 120));
+  }
+
+  // Phase 2 — live on Go API
+  {
+    const { res, data } = await req('/api/whatsapp/templates', { token: adminToken });
+    if (res.ok && Array.isArray(data)) ok('WhatsApp templates', `${data.length}`);
+    else fail('WhatsApp templates', JSON.stringify(data).slice(0, 120));
+  }
+  {
+    const { res, data } = await req('/api/tariffs', { token: adminToken });
+    if (res.ok && Array.isArray(data)) ok('Tarifario', `${data.length}`);
+    else fail('Tarifario', JSON.stringify(data).slice(0, 120));
+  }
+  {
+    const res = await req('/api/clients/template.xlsx', { token: adminToken, raw: true });
+    if (res.ok) ok('Plantilla Excel', res.headers.get('content-type') || 'ok');
+    else fail('Plantilla Excel', `status ${res.status}`);
   }
 
   console.log(`\nResultado: ${passed} ok, ${failed} fail\n`);

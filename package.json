@@ -1,13 +1,13 @@
 {
   "name": "taller-gestion",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
-    "dev": "concurrently -n api,web -c blue,green \"npm run dev:server\" \"npm run dev:client\"",
-    "dev:server": "node --watch server/index.js",
+    "dev": "npm run dev:client",
     "dev:client": "npm run dev --prefix client",
-    "start": "node server/index.js",
+    "dev:api": "cd backend && go run ./cmd/api",
+    "legacy:server": "node --watch server/index.js",
     "build": "npm run build --prefix client",
     "qa": "node scripts/qa.mjs",
     "postinstall": "npm install --prefix client --ignore-scripts"
@@ -23,5 +23,6 @@
   },
   "devDependencies": {
     "concurrently": "^9.2.1"
-  }
+  },
+  "description": "React client + Go API (backend/). Legacy Node API: npm run legacy:server"
 }
